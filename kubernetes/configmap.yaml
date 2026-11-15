@@ -1,0 +1,16 @@
+# Non-sensitive runtime configuration for the inference API. Secrets never go here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inference-config
+  namespace: mlops-agent
+  labels:
+    app.kubernetes.io/name: inference-api
+    app.kubernetes.io/part-of: mlops-agent
+data:
+  MODEL_PATH: /app/model/model.joblib
+  MODEL_NAME: credit-risk-classifier
+  MODEL_VERSION: "1"
+  DECISION_THRESHOLD: "0.5"
+  LOG_LEVEL: INFO
+  APP_VERSION: "1.0.0"

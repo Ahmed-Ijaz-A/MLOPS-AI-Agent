@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlops-agent
+  labels:
+    app.kubernetes.io/part-of: mlops-agent
+    pod-security.kubernetes.io/enforce: restricted

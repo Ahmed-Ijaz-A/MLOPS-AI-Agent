@@ -1,0 +1,43 @@
+# Least-privilege identity for running the agent inside the cluster.
+# Read access to workloads/logs/events, and ONLY patch on deployments (restart/rollback) and
+# deployments/scale - all confined to the mlops-agent namespace. No secrets, no delete, no exec.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlops-agent
+  namespace: mlops-agent
+  labels:
+    app.kubernetes.io/part-of: mlops-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlops-agent-operator
+  namespace: mlops-agent
+rules:
+  - apiGroups: [""]
+    resources: [pods, pods/log, services, endpoints, events, configmaps]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments]
+    verbs: [patch]
+  - apiGroups: ["apps"]
+    resources: [deployments/scale]
+    verbs: [get, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlops-agent-operator
+  namespace: mlops-agent
+subjects:
+  - kind: ServiceAccount
+    name: mlops-agent
+    namespace: mlops-agent
+roleRef:
+  kind: Role
+  name: mlops-agent-operator
+  apiGroup: rbac.authorization.k8s.io
