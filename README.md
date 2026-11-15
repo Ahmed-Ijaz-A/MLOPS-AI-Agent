@@ -26,7 +26,7 @@ is backed by a tool result it actually received.
 | **Web console** | chat, live evidence trace, Approve/Decline cards, live integration health |
 | **Any LLM** | Claude (Anthropic SDK) or any OpenAI-compatible provider (Cerebras, Gemini, Groq, Mistral, OpenRouter), plus a deterministic offline mode that needs no key |
 | **Real ML lifecycle** | credit-risk model on OpenML `credit-g`, DVC versions v1.0 / v2.0, Airflow DAG with a quality gate, MLflow registry aliases, hardened K8s deployment |
-| **287 tests, 84 % coverage** | real temporary git+DVC repos and MLflow stores, fake K8s / Airflow / LLM; CI also deploys to a kind cluster |
+| **290 tests, 84 % coverage** | real temporary git+DVC repos and MLflow stores, fake K8s / Airflow / LLM; CI also deploys to a kind cluster |
 | **Live evidence** | 8 recorded scenarios against the running stack, including 3 failure investigations, in [docs/conversations](docs/conversations) |
 
 Read next: [architecture.md](architecture.md) · [technical report](docs/REPORT.md) · [tool reference](docs/TOOLS.md)
@@ -132,7 +132,7 @@ Example questions:
 
 ```powershell
 .venv\Scripts\ruff check . ; .venv\Scripts\ruff format --check .
-.venv\Scripts\python -m pytest --cov            # 287 tests, ~2 min, no services needed
+.venv\Scripts\python -m pytest --cov            # 290 tests, ~2 min, no services needed
 ```
 
 The tests cover tool selection and execution, multi-tool reasoning, timeouts, invalid requests,
@@ -152,6 +152,21 @@ the inference API, the DAG structure, and the manifests.
 | `docker-and-kind` | builds the inference image, smoke-tests it, deploys to a kind cluster, then has the agent diagnose the live deployment |
 
 External services are mocked in ordinary CI runs. Only the kind job talks to a real (ephemeral) cluster.
+
+### Continuous delivery
+
+[`.github/workflows/cd.yml`](.github/workflows/cd.yml) runs **only after CI passes** on `main`, and on version tags:
+
+| Job | What it does |
+|---|---|
+| `build-and-push` | Rebuilds the release model from the dataset. **Aborts if the rebuilt data's md5 differs from the `.dvc` pointer** or the quality gate fails. Builds and pushes `ghcr.io/<owner>/mlops-inference:model-v<version>` and `ghcr.io/<owner>/mlops-agent:<version>` |
+| `deploy-staging` | Pulls the published image from GHCR into an ephemeral kind "staging" cluster, rolls it out, smoke-tests `/version` and `/predict` through the Service, and has the agent verify the deployment is healthy |
+| `release` | On a `v*.*.*` tag, creates a GitHub Release with the image digests, the dataset md5 and the model metrics, plus the model as an attachment |
+
+```powershell
+git tag v1.0.0 ; git push origin v1.0.0     # cut a release
+docker run -p 8000:8000 --env-file .env ghcr.io/<owner>/mlops-agent:1.0.0   # run the published agent
+```
 
 ## 7. Demonstrations and failure injection
 
@@ -178,7 +193,7 @@ kubernetes/       namespace, configmap, deployment, service, PDB, RBAC, kustomiz
 infra/            docker-compose (MLflow + Airflow 3), custom images
 config/           agent_policy.yaml - every permission the agent has
 scripts/          bootstrap data, seed experiments, deploy model, inject failures, run demos, gen docs
-tests/            287 tests
+tests/            290 tests
 docs/             REPORT.md, TOOLS.md, conversations/ (live transcripts), evidence/ (exports)
 screenshots/      console, MLflow, Airflow
 dvc.yaml  dvc.lock  params.yaml  Dockerfile  pyproject.toml  architecture.md

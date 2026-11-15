@@ -22,8 +22,8 @@ no-credentials case.
 | Airflow module + DAG (≥3 tools) | 7 tools; `dags/training_pipeline.py` | [03-pipeline](conversations/03-pipeline.md), [Airflow grid](../screenshots/06-airflow-dag-runs.png) |
 | Kubernetes module + manifests (≥3 tools) | 11 tools; `kubernetes/` | [04-diagnosis](conversations/04-diagnosis.md), [kubernetes.txt](evidence/kubernetes.txt) |
 | Multi-tool integration | orchestrator + retraining policy tool | [05-multi](conversations/05-multi.md), [console](../screenshots/01-console-multitool.png) |
-| Testing, reliability, safety | 287 tests, 84 % coverage | Section 8 |
-| GitHub + CI | 6-job workflow including a kind deployment | Section 9 |
+| Testing, reliability, safety | 290 tests, 84 % coverage | Section 8 |
+| GitHub + CI | 6-job CI including a kind deployment; 3-job CD (GHCR images, kind staging, releases) | Section 9 |
 
 ## 2. Architecture
 
@@ -240,14 +240,14 @@ champion v2. The policy tool later **ignores** this drill when it decides whethe
 
 ## 8. Testing, reliability and safety
 
-**287 tests, 84 % line coverage, about 2 minutes, no services required.** DVC tests run against a real
+**290 tests, 84 % line coverage, about 2 minutes, no services required.** DVC tests run against a real
 temporary git+DVC repository with two tagged versions, and MLflow tests against a real temporary MLflow
 store. Kubernetes, Airflow (an in-memory REST API over `httpx.MockTransport`) and the LLM (a scripted
 model) are faked.
 
 | Required test | Test(s) |
 |---|---|
-| ≥ 8 meaningful tests | 287 across 14 test files |
+| ≥ 8 meaningful tests | 290 across 14 test files |
 | Mocked tool responses for unavailable services | `test_no_kubeconfig_is_unavailable`, `test_connection_refused_unavailable`, `test_unreachable_tracking_server_is_unavailable`, `test_insufficient_evidence_when_services_down` |
 | Successful tool selection and execution | `test_llm_selects_and_executes_tools`, `test_parallel_tool_calls_return_in_one_message`, `test_planner_maps_intents_to_tools` (16 intents), `test_mandatory_scenario_consults_all_four_systems` |
 | Tool timeouts | `test_tool_timeout_reported`, `test_http_timeout_reported_as_timeout` |
@@ -277,6 +277,21 @@ services are mocked in ordinary runs.
 **Status at submission: all six jobs pass** (run for commit `17430f4`, 4 min 27 s). Getting there took one
 fix: the first runs failed in `test` on a Linux-only path-handling gap (section 7.5).
 
+**Continuous delivery** ([`.github/workflows/cd.yml`](../.github/workflows/cd.yml)) runs only after CI
+succeeds on `main`, and on `v*.*.*` tags:
+- **`build-and-push`** rebuilds the release model and refuses to continue if the rebuilt dataset's md5
+  differs from the `.dvc` pointer or the quality gate fails. CI runners can't reach the local MLflow
+  server, so the model is retrained deterministically and its provenance is proven by checksum. Locally
+  this reproduces the champion exactly (md5 `21e9a847…`, F1 0.6575). The job then pushes the inference
+  image and the agent image (`Dockerfile.agent`) to GHCR.
+- **`deploy-staging`** pulls the published image into an ephemeral kind cluster, rolls it out, checks
+  that `/version` reports the release version, calls `/predict`, and has the agent confirm the
+  deployment is healthy.
+- **`release`** creates a GitHub Release with the image digests, the dataset md5, the metrics and the
+  model archive.
+
+Both workflows pass `actionlint` with no findings.
+
 The history uses conventional commits, with each feature, fix and evidence update as a separate commit.
 
 ## 10. Known limitations and proposed improvements
@@ -288,6 +303,6 @@ The history uses conventional commits, with each feature, fix and evidence updat
 | Confirmation tokens aren't tied to an authenticated identity (an optional shared API key only) | OIDC / SSO with role-based approvers, and a two-person rule for production namespaces |
 | No live model monitoring, so "degradation" must be supplied by the user | Prometheus + an evaluation job feeding `observed_metrics` into the retraining policy automatically |
 | Small free-tier LLMs vary between runs; quality depends on prompt rules and coverage checks | Evaluation set over the recorded scenarios, run in CI against the configured provider; a stronger default model when budget allows |
-| Promotion to `champion` is a script, not an agent tool | An approval-gated `mlflow_promote_model` tool that also opens a deployment PR (GitOps with Argo CD) |
+| Promotion to `champion` is a script, not an agent tool; CD deploys to an ephemeral staging cluster, not a persistent one | An approval-gated `mlflow_promote_model` tool that opens a deployment PR, with GitOps (Argo CD) syncing a persistent staging and production cluster |
 | The model is baked into the image, so the image must be rebuilt per version | Fine for this scale; at larger scale use a model server (KServe / MLServer) pulling from the registry |
 | Tool timeouts can't cancel already-running threads | Process-level isolation for long-running tools |
