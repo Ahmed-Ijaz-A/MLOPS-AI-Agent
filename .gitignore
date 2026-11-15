@@ -1,0 +1,38 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Secrets - NEVER commit
+.env
+*.kubeconfig
+kubeconfig*
+infra/airflow/simple_auth_manager_passwords.json*
+
+# Runtime output
+logs/
+artifacts/
+mlruns/
+mlartifacts/
+infra/airflow/logs/
+infra/airflow/plugins/
+
+# DVC-managed data and outputs (tracked by .dvc / dvc.lock instead of git)
+/data/raw/credit_risk.csv
+/data/processed/
+/models/
+/serving/model/
+.dvc-storage/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

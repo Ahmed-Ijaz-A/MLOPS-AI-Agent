@@ -1,0 +1,45 @@
+# Agent safety & decision policy.
+# Every operational permission the agent has is declared here, so a reviewer can audit
+# exactly what the agent is allowed to do without reading code.
+
+permissions:
+  # Tools at these levels execute immediately.
+  auto_approved_levels: [read]
+  # Tools at these levels are never executed without an explicit, per-action human confirmation.
+  confirmation_required_levels: [operate, mutate]
+  # Pending confirmations expire after this many seconds.
+  confirmation_ttl_seconds: 600
+
+kubernetes:
+  # The agent may only *read or change* objects in these namespaces.
+  allowed_namespaces: [mlops-agent]
+  default_namespace: mlops-agent
+  # Deployments the agent may restart / scale.
+  mutable_deployments: [inference-api]
+  scale_bounds: {min_replicas: 1, max_replicas: 5}
+  log_tail_lines_max: 500
+
+airflow:
+  # Only these DAGs can be triggered by the agent.
+  triggerable_dags: [ml_training_pipeline]
+  # conf keys a trigger may pass through (anything else is rejected).
+  allowed_conf_keys: [inject_failure, model_type, reason]
+
+dvc:
+  # Sub-commands the DVC/Git tools may run. Anything else (push, gc, remove, checkout in the
+  # working tree, reset, ...) is refused before a process is spawned.
+  allowed_dvc_commands: [status, diff, data, get, list, version, params, metrics, doctor]
+  allowed_git_commands: [log, rev-parse, describe, show, tag, status, diff, cat-file, ls-files]
+
+mlflow:
+  registered_model_name: credit-risk-classifier
+  experiment_name: credit-risk-classification
+  primary_metric: f1
+
+# Explicit retraining policy. The agent recommends retraining ONLY when one of these rules fires
+# on actual evidence; it never retrains automatically.
+retraining:
+  max_model_age_days: 30          # freshness policy
+  min_f1: 0.60                    # minimum acceptable F1 for the serving model
+  retrain_on_data_change: true    # tracked dataset changed since the serving model was trained
+  retrain_on_failed_quality_gate: true

@@ -1,0 +1,24 @@
+dataset:
+  version: v1.0
+  path: data/raw/credit_risk.csv
+  target: default
+
+preprocess:
+  test_size: 0.2
+  random_state: 42
+
+train:
+  model_type: logistic_regression   # logistic_regression | random_forest | gradient_boosting
+  C: 1.0
+  max_iter: 2000
+  n_estimators: 300
+  max_depth: 8
+  learning_rate: 0.05
+  random_state: 42
+
+# A model is only registered (alias "candidate") if ALL thresholds hold.
+# Recall matters most: approving a borrower who later defaults is the costly error.
+quality_gate:
+  min_f1: 0.60
+  min_recall: 0.65
+  min_roc_auc: 0.75

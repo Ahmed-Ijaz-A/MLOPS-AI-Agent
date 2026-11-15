@@ -1,0 +1,16 @@
+.venv
+.git
+.dvc/cache
+.dvc-storage
+mlruns
+mlartifacts
+artifacts
+logs
+data
+models
+infra
+tests
+docs
+screenshots
+**/__pycache__
+.env
