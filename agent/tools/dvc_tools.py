@@ -13,7 +13,7 @@ import io
 import shutil
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 import yaml
@@ -215,7 +215,9 @@ class ReproduceArgs(_Base):
 
 
 def _check_path(ctx: ToolContext, path: str) -> str:
-    if ".." in Path(path).parts or Path(path).is_absolute():
+    # Check with both path flavours so "C:/..." or "\\server\share" is rejected on Linux too.
+    win, posix = PureWindowsPath(path), PurePosixPath(path)
+    if ".." in win.parts or ".." in posix.parts or win.is_absolute() or win.drive or posix.is_absolute():
         raise PolicyError("Dataset path must be repo-relative without '..'.")
     if not (ctx.settings.repo_root / f"{path}.dvc").exists() and not (ctx.settings.repo_root / "dvc.lock").exists():
         raise ToolInputError(f"'{path}' is not tracked by DVC (no {path}.dvc).")
