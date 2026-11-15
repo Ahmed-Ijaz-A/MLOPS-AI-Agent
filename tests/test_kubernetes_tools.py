@@ -288,3 +288,24 @@ def test_crash_correlated_with_misconfigured_configmap(make_executor):
     assert "MODEL_PATH" in cm["evidence"] and "inference-config" in cm["suggested_fix"]
     assert not any("LOG_LEVEL" in f["evidence"] for f in r.data["findings"])  # 'INFO' isn't in an error line
     assert r.data["configmaps"]["inference-config"]["MODEL_PATH"].endswith("MISSING.joblib")
+
+
+def test_scheduled_pod_waiting_on_image_is_not_a_scheduling_problem(make_executor):
+    good = [make_pod("inference-api-ok-1"), make_pod("inference-api-ok-2")]
+    pulling = make_pod(
+        "inference-api-new-1",
+        phase="Pending",
+        ready=False,
+        waiting="ImagePullBackOff",
+        image="mlops-inference:model-v404",
+    )
+    pulling.status.container_statuses = [
+        make_pod(
+            "x", ready=False, waiting="ImagePullBackOff", image="mlops-inference:model-v404"
+        ).status.container_statuses[0]
+    ]
+    k8s = k8s_clients(
+        FakeCore(pods=[*good, pulling], services=[make_service()]), FakeApps(deployments=[make_deployment(ready=2)])
+    )
+    issues = [f["issue"] for f in run(make_executor, k8s, "k8s_diagnose_deployment").data["findings"]]
+    assert "Image cannot be pulled" in issues and "Pod cannot be scheduled" not in issues

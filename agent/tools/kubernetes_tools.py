@@ -249,13 +249,16 @@ def diagnose(
                         "Inspect the previous container logs; fix the configuration or code error shown.",
                     )
         if p["phase"] == "Pending":
+            # A pod pulling (or failing to pull) its image is also Pending, but it *was* scheduled; only a pod
+            # with no node, or with a FailedScheduling event, has a scheduling problem.
             sched = [e for e in events if e["reason"] == "FailedScheduling" and p["name"] in e["object"]]
-            add(
-                "high",
-                "Pod cannot be scheduled",
-                f"pod {p['name']} Pending. {sched[0]['message'] if sched else ''}",
-                "Lower resource requests or add cluster capacity.",
-            )
+            if sched or not p.get("node"):
+                add(
+                    "high",
+                    "Pod cannot be scheduled",
+                    f"pod {p['name']} Pending. {sched[0]['message'] if sched else 'No node assigned.'}",
+                    "Lower resource requests or add cluster capacity.",
+                )
         elif p["phase"] == "Running" and not p["is_ready"] and all(c["state"] == "running" for c in p["containers"]):
             probe = [e for e in events if "probe failed" in e["message"].lower() and p["name"] in e["object"]]
             add(
