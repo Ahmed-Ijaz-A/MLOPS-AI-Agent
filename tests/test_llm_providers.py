@@ -8,6 +8,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+from agent.config import PROVIDER_KEYS
 from agent.llm import PRESETS, OpenAICompatLLM, _openai_messages, _plain_schema, build_llm, to_gemini_schema
 from agent.tools import build_registry
 
@@ -24,6 +25,9 @@ from agent.tools import build_registry
     ],
 )
 def test_provider_resolution(settings, monkeypatch, provider, anthropic, gemini, expected):
+    for envs in PROVIDER_KEYS.values():
+        for var in envs:
+            monkeypatch.delenv(var, raising=False)
     for var, val in (("ANTHROPIC_API_KEY", anthropic), ("GEMINI_API_KEY", gemini)):
         monkeypatch.setenv(var, val) if val else monkeypatch.delenv(var, raising=False)
     monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)

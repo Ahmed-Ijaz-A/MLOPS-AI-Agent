@@ -21,6 +21,7 @@ def mlflow_factory(ctx: ToolContext):
     from mlflow.tracking import MlflowClient
 
     os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "1")
+    os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")
     os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "8")
     mlflow.set_tracking_uri(ctx.settings.mlflow_tracking_uri)
     return MlflowClient(tracking_uri=ctx.settings.mlflow_tracking_uri)

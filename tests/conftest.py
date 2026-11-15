@@ -15,7 +15,14 @@ os.environ.pop("AGENT_API_KEY", None)
 os.environ["MLFLOW_HTTP_REQUEST_MAX_RETRIES"] = "0"
 os.environ["MLFLOW_HTTP_REQUEST_TIMEOUT"] = "2"
 
-from agent.config import PROJECT_ROOT, get_policy, load_settings
+from agent.config import PROJECT_ROOT, PROVIDER_KEYS, get_policy, load_settings
+
+# agent.config loads .env on import - strip every LLM credential so tests never depend on the developer's keys.
+for _envs in PROVIDER_KEYS.values():
+    for _var in _envs:
+        os.environ.pop(_var, None)
+os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 from agent.safety import ServiceUnavailable
 from agent.tools import build_executor
 from tests.fakes import synthetic_credit_frame

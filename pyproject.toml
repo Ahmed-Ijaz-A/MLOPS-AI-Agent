@@ -52,7 +52,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S", "B", "E501"]
+"tests/*" = ["S", "B", "E501", "E402"]
 "scripts/*" = ["S"]
 
 [tool.pytest.ini_options]

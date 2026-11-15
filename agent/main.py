@@ -92,6 +92,9 @@ def cli(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-trace", action="store_true")
     ap.add_argument("--decline-all", action="store_true", help="automatically decline pending actions")
     a = ap.parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):  # Windows consoles default to cp1252; LLMs emit unicode
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     if a.offline:
         os.environ["LLM_PROVIDER"] = "offline"
         get_settings.cache_clear()
