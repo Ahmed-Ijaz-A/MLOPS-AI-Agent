@@ -236,6 +236,7 @@ champion v2. The policy tool later **ignores** this drill when it decides whethe
 | Windows console (cp1252) crashed on model / MLflow unicode | live CLI run | UTF-8 reconfiguration in entry points |
 | Model wrapped citations in zero-width / full-width brackets (`【E1】`, `[ E1 ]`) | review of transcripts | citation normalisation + tests |
 | Cold start: first MLflow call took >20 s | red status pill in the console | background client warm-up + parallel health probes |
+| **Security gap found by CI:** on Linux, `C:/Windows/system.ini` was not treated as absolute, so the dataset-path guard answered "not tracked" (`invalid_request`) instead of **denied** | the `test` job failed on GitHub Actions; reproduced in a clean Linux container (`test_path_traversal_denied`) | the guard checks with both `PureWindowsPath` and `PurePosixPath` (drive letters, UNC paths and `..` rejected on every OS); all 6 CI jobs now green |
 
 ## 8. Testing, reliability and safety
 
@@ -272,6 +273,9 @@ services are mocked in ordinary runs.
 - **`manifests`:** strict kubeconform on the rendered kustomization.
 - **`docker-and-kind`:** builds and smoke-tests the inference image, deploys it to an ephemeral kind
   cluster, and has the agent diagnose the live deployment through the real Kubernetes API.
+
+**Status at submission: all six jobs pass** (run for commit `17430f4`, 4 min 27 s). Getting there took one
+fix: the first runs failed in `test` on a Linux-only path-handling gap (section 7.5).
 
 The history uses conventional commits, with each feature, fix and evidence update as a separate commit.
 
