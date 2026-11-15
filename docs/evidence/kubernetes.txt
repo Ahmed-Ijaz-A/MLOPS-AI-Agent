@@ -1,0 +1,112 @@
+# kubectl get deploy,rs,pods,svc,cm,pdb -n mlops-agent -o wide
+NAME                            READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS      IMAGES                     SELECTOR
+deployment.apps/inference-api   2/2     2            2           44m   inference-api   mlops-inference:model-v2   app.kubernetes.io/name=inference-api
+
+NAME                                       DESIRED   CURRENT   READY   AGE     CONTAINERS      IMAGES                                      SELECTOR
+replicaset.apps/inference-api-59dfc98f85   0         0         0       17m     inference-api   mlops-inference:model-v2                    app.kubernetes.io/name=inference-api,pod-template-hash=59dfc98f85
+replicaset.apps/inference-api-647cd975b4   0         0         0       16m     inference-api   mlops-inference:model-v2                    app.kubernetes.io/name=inference-api,pod-template-hash=647cd975b4
+replicaset.apps/inference-api-6799cbfddd   0         0         0       24m     inference-api   mlops-inference:model-v2                    app.kubernetes.io/name=inference-api,pod-template-hash=6799cbfddd
+replicaset.apps/inference-api-8697655964   0         0         0       13m     inference-api   mlops-inference:model-v404-does-not-exist   app.kubernetes.io/name=inference-api,pod-template-hash=8697655964
+replicaset.apps/inference-api-c8dbd568f    2         2         2       3m18s   inference-api   mlops-inference:model-v2                    app.kubernetes.io/name=inference-api,pod-template-hash=c8dbd568f
+replicaset.apps/inference-api-cd46578c6    0         0         0       23m     inference-api   mlops-inference:model-v2                    app.kubernetes.io/name=inference-api,pod-template-hash=cd46578c6
+
+NAME                                READY   STATUS    RESTARTS   AGE     IP            NODE                    NOMINATED NODE   READINESS GATES
+pod/inference-api-c8dbd568f-2nf6j   1/1     Running   0          2m54s   10.244.0.17   desktop-control-plane   <none>           <none>
+pod/inference-api-c8dbd568f-5ptl9   1/1     Running   0          3m18s   10.244.0.16   desktop-control-plane   <none>           <none>
+
+NAME                    TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE   SELECTOR
+service/inference-api   ClusterIP   10.96.70.151   <none>        80/TCP    44m   app.kubernetes.io/name=inference-api
+
+NAME                         DATA   AGE
+configmap/inference-config   6      44m
+configmap/kube-root-ca.crt   1      44m
+
+NAME                                       MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/inference-api   1               N/A               1                     44m
+
+# kubectl rollout history deployment/inference-api
+deployment.apps/inference-api 
+REVISION  CHANGE-CAUSE
+3         <none>
+4         <none>
+5         <none>
+7         <none>
+8         <none>
+9         <none>
+
+
+# kubectl describe deployment inference-api (probes, resources, annotations)
+Name:                   inference-api
+Namespace:              mlops-agent
+CreationTimestamp:      Sun, 15 Nov 2026 16:22:57 +0500
+Labels:                 app.kubernetes.io/component=model-server
+                        app.kubernetes.io/name=inference-api
+                        app.kubernetes.io/part-of=mlops-agent
+                        app.kubernetes.io/version=model-v2
+Annotations:            deployment.kubernetes.io/revision: 9
+Selector:               app.kubernetes.io/name=inference-api
+Replicas:               2 desired | 2 updated | 2 total | 2 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  0 max unavailable, 1 max surge
+Pod Template:
+  Labels:       app.kubernetes.io/name=inference-api
+                app.kubernetes.io/part-of=mlops-agent
+  Annotations:  kubectl.kubernetes.io/restartedAt: 2026-11-15T12:04:21.129783+00:00
+                mlops.agent/dataset-version: v2.0
+                mlops.agent/model-name: credit-risk-classifier
+                mlops.agent/model-run-id: 2510235a1b05490bab5f71a3770ea793
+                mlops.agent/model-version: 2
+  Containers:
+   inference-api:
+    Image:      mlops-inference:model-v2
+    Port:       8080/TCP (http)
+    Host Port:  0/TCP (http)
+    Limits:
+      cpu:     500m
+      memory:  512Mi
+    Requests:
+      cpu:      100m
+      memory:   256Mi
+    Liveness:   http-get http://:http/health delay=10s timeout=2s period=10s #success=1 #failure=3
+    Readiness:  http-get http://:http/ready delay=3s timeout=2s period=5s #success=1 #failure=3
+    Environment Variables from:
+      inference-config  ConfigMap  Optional: false
+    Environment:        <none>
+    Mounts:
+      /tmp from tmp (rw)
+  Volumes:
+   tmp:
+    Type:          EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:        
+    SizeLimit:     <unset>
+  Node-Selectors:  <none>
+  Tolerations:     <none>
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  inference-api-6799cbfddd (0/0 replicas created), inference-api-cd46578c6 (0/0 replicas created), inference-api-59dfc98f85 (0/0 replicas created), inference-api-647cd975b4 (0/0 replicas created), inference-api-8697655964 (0/0 replicas created)
+NewReplicaSet:   inference-api-c8dbd568f (2/2 replicas created)
+Events:
+  Type    Reason             Age                  From                   Message
+  ----    ------             ----                 ----                   -------
+  Normal  ScalingReplicaSet  44m                  deployment-controller  Scaled up replica set inference-api-865d4ccc7 from 0 to 2
+  Normal  ScalingReplicaSet  44m                  deployment-controller  Scaled up replica set inference-api-7b544995fb from 0 to 1
+  Normal  ScalingReplicaSet  44m                  deployment-controller  Scaled down replica set inference-api-865d4ccc7 from 2 to 1
+  Normal  ScalingReplicaSet  44m                  deployment-controller  Scaled up replica set inference-api-7b544995fb from 1 to 2
+
+# Prediction through the ClusterIP Service (in-cluster curl pod)
+Error from server (Forbidden): pods "curl-evidence" is forbidden: violates PodSecurity "restricted:latest": allowPrivilegeEscalation != false (container "curl-evidence" must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container "curl-evidence" must set securityContext.capabilities.drop=["ALL"]), runAsNonRoot != true (pod or container "curl-evidence" must set securityContext.runAsNonRoot=true), seccompProfile (pod or container "curl-evidence" must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+(An in-cluster curl pod was rejected by the namespace's PodSecurity 'restricted' policy - hardening working as intended.)
+# kubectl port-forward svc/inference-api 18080:80  (ClusterIP Service)
+## GET /version
+{"app_version":"1.0.0","model_version_config":"2","decision_threshold":0.5,"model_name":"credit-risk-classifier","model_version":"2","run_id":"2510235a1b05490bab5f71a3770ea793","dataset_version":"v2.0","dataset_md5":"21e9a847a6998b24add1efc1fc1ed885","git_commit":"fb0014b2b97514a2954fb2564816e31016471d19","metrics":{"f1":0.6575,"recall":0.8,"roc_auc":0.8058,"accuracy":0.75},"exported_at":"2026-11-15T11:20:45+00:00"}
+## POST /predict
+{"model_version":"2","predictions":[{"default_probability":0.7651,"decision":"review"}]}
+## GET /metrics
+inference_predict_requests_total{model_version="2"} 1
+inference_predict_rows_total{model_version="2"} 1
+inference_predict_errors_total{model_version="2"} 0
+inference_model_ready 1

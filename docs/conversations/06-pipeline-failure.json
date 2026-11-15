@@ -1,0 +1,210 @@
+{
+  "scenario": "pipeline-failure",
+  "title": "Failure investigation: quality gate blocks a bad model",
+  "log": [
+    {
+      "type": "chat",
+      "message": "Trigger the training pipeline with the low_quality failure injection.",
+      "response": {
+        "request_id": "req_ba051f3f3be3",
+        "session_id": "s_3a2b44c23d",
+        "answer": "**Summary**  \nThe training pipeline was not started; a pending confirmation is required to trigger the DAG with the requested failure injection.\n\n**Verified facts**\n- The request to trigger the DAG with `inject_failure: low_quality` generated a pending action that needs human approval. Details are in confirmation id `cfm_yxyufIlNGAPM` [E2].\n\n**Uncertainties**\n- No execution has occurred yet; the pipeline will only run after the pending confirmation is approved.\n\n**Recommended actions**\n- Approve the pending confirmation `cfm_yxyufIlNGAPM` to trigger the training pipeline with the low\u2011quality failure injection, or cancel if not desired.",
+        "mode": "llm",
+        "tool_calls": [
+          {
+            "evidence_id": "E1",
+            "tool": "airflow_trigger_dag",
+            "status": "denied",
+            "duration_ms": 0.5,
+            "arguments": {
+              "dag_id": "ml_training_pipeline",
+              "conf": {
+                "failure_injection": "low_quality"
+              }
+            },
+            "summary": "",
+            "error": "DAG conf keys ['failure_injection'] are not allowed. Allowed keys: ['inject_failure', 'model_type', 'reason']."
+          },
+          {
+            "evidence_id": "E2",
+            "tool": "airflow_trigger_dag",
+            "status": "requires_confirmation",
+            "duration_ms": 2.2,
+            "arguments": {
+              "dag_id": "ml_training_pipeline",
+              "conf": {
+                "inject_failure": "low_quality",
+                "reason": "User requested low_quality failure injection"
+              }
+            },
+            "summary": "NOT EXECUTED. 'Trigger Airflow DAG 'ml_training_pipeline' with conf {'inject_failure': 'low_quality', 'reason': 'User requested low_quality failure injection'}' requires explicit human approval (confirmation id cfm_yxyufIlNGAPM, expires 12:02:15 UTC).",
+            "error": null
+          }
+        ],
+        "pending_confirmations": [
+          {
+            "confirmation_id": "cfm_yxyufIlNGAPM",
+            "tool": "airflow_trigger_dag",
+            "arguments": {
+              "dag_id": "ml_training_pipeline",
+              "conf": {
+                "inject_failure": "low_quality",
+                "reason": "User requested low_quality failure injection"
+              }
+            },
+            "description": "Trigger Airflow DAG 'ml_training_pipeline' with conf {'inject_failure': 'low_quality', 'reason': 'User requested low_quality failure injection'}",
+            "permission": "operate",
+            "fingerprint": "72e0a3d9a2b28e5ec3b283a58fe786c93f8b81fdfc8e4b1fd59403ccb108f069",
+            "expires_at": "2026-11-15T12:02:15.827694Z",
+            "session_id": "s_3a2b44c23d"
+          }
+        ],
+        "systems_consulted": [
+          "airflow"
+        ],
+        "grounding": {
+          "grounded": true,
+          "checked_values": 0,
+          "unsupported_values": [],
+          "note": "No numeric/identifier claims to verify."
+        },
+        "usage": {
+          "input_tokens": 10142,
+          "output_tokens": 674
+        },
+        "duration_ms": 1720.6,
+        "created_at": "2026-11-15T11:52:16.280033Z"
+      }
+    },
+    {
+      "type": "decision",
+      "decisions": [
+        {
+          "request_id": "req_5e4d0bc400b3",
+          "confirmation_id": "cfm_yxyufIlNGAPM",
+          "tool": "airflow_trigger_dag",
+          "arguments": {
+            "dag_id": "ml_training_pipeline",
+            "conf": {
+              "inject_failure": "low_quality",
+              "reason": "User requested low_quality failure injection"
+            }
+          },
+          "status": "approved",
+          "result": {
+            "evidence_id": "E1",
+            "tool": "airflow_trigger_dag",
+            "status": "ok",
+            "system": "airflow",
+            "summary": "Triggered ml_training_pipeline: run manual__2026-11-15T11:52:17.885724+00:00_HIAQP8yc is queued. Use airflow_wait_for_dag_run to follow it.",
+            "data": {
+              "run_id": "manual__2026-11-15T11:52:17.885724+00:00_HIAQP8yc",
+              "state": "queued",
+              "run_type": "manual",
+              "logical_date": null,
+              "run_after": "2026-11-15T11:52:17.885724Z",
+              "start_date": null,
+              "end_date": null,
+              "conf": {
+                "inject_failure": "low_quality",
+                "reason": "User requested low_quality failure injection"
+              },
+              "unpaused": false
+            },
+            "error": null,
+            "duration_ms": 1765.3,
+            "arguments": {
+              "dag_id": "ml_training_pipeline",
+              "conf": {
+                "inject_failure": "low_quality",
+                "reason": "User requested low_quality failure injection"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "chat",
+      "message": "Wait for that pipeline run to finish. Did it fail? If so, find the failed task, read its logs, and explain the root cause and whether any model was promoted.",
+      "response": {
+        "request_id": "req_90096cd4e5a3",
+        "session_id": "s_3a2b44c23d",
+        "answer": "**Summary**  \nThe pipeline run failed at the\u202f`quality_gate`\u202ftask because the model metrics did not meet the required thresholds; consequently the downstream\u202f`register_model`\u202ftask was upstream\u2011failed and no new model was promoted.\n\n**Verified facts**\n- DAG run `manual__2026-11-15T11:52:17.885724+00:00_HIAQP8yc` completed with overall state **FAILED**; tasks `validate_dataset`, `preprocess_data`, `train_model`, `evaluate_and_log` succeeded, `quality_gate` failed, and `register_model` was upstream\u2011failed\u202f[E1].\n- Logs of the failed `quality_gate` task show:  \n  `Quality gate failed: f1=0.3373 < required 0.6; recall=0.4667 < required 0.65; roc_auc=0.4813 < required 0.75`\u202f[E2].\n- The MLflow model registry currently lists version **5** as the candidate and version **2** as the champion; no promotion occurred from this run\u202f[E3].\n- The failed run `da8b1bd4742f45668de3eeee982c0e59` (originating from this DAG) recorded metrics `f1=0.3373, recall=0.4667, roc_auc=0.4813` and is marked **quality_gate=failed**\u202f[E4].\n\n**Uncertainties**\n- None; all relevant information was retrieved from Airflow and MLflow.\n\n**Recommended actions**\n- Investigate data or feature drift that caused the low metrics (e.g., compare the current dataset version `v2.0` against previous versions via `dvc_compare_versions`).\n- If the issue is resolved, trigger a new training run (via a pending Airflow DAG trigger) after fixing the underlying cause.",
+        "mode": "llm",
+        "tool_calls": [
+          {
+            "evidence_id": "E1",
+            "tool": "airflow_wait_for_dag_run",
+            "status": "ok",
+            "duration_ms": 50521.8,
+            "arguments": {
+              "dag_id": "ml_training_pipeline",
+              "run_id": "manual__2026-11-15T11:52:17.885724+00:00_HIAQP8yc",
+              "timeout_s": 600,
+              "poll_s": 10
+            },
+            "summary": "Run manual__2026-11-15T11:52:17.885724+00:00_HIAQP8yc finished as FAILED: validate_dataset=success, preprocess_data=success, train_model=success, evaluate_and_log=success, quality_gate=failed, register_model=upstream_failed.",
+            "error": null
+          },
+          {
+            "evidence_id": "E2",
+            "tool": "airflow_get_task_logs",
+            "status": "ok",
+            "duration_ms": 307.4,
+            "arguments": {
+              "dag_id": "ml_training_pipeline",
+              "run_id": "manual__2026-11-15T11:52:17.885724+00:00_HIAQP8yc",
+              "task_id": "quality_gate",
+              "try_number": null,
+              "tail": 200
+            },
+            "summary": "quality_gate try 1: 7 log lines; root-cause line: Exception: AirflowFailException: Quality gate failed: f1=0.3373 < required 0.6; recall=0.4667 < required 0.65; roc_auc=0.4813 < required 0.75 (at training_pipeline.py:192)",
+            "error": null
+          },
+          {
+            "evidence_id": "E3",
+            "tool": "mlflow_get_model_registry",
+            "status": "ok",
+            "duration_ms": 121.3,
+            "arguments": {
+              "model_name": "credit-risk-classifier"
+            },
+            "summary": "Model 'credit-risk-classifier': 5 version(s); candidate=v5, champion=v2.",
+            "error": null
+          },
+          {
+            "evidence_id": "E4",
+            "tool": "mlflow_list_runs",
+            "status": "ok",
+            "duration_ms": 863.3,
+            "arguments": {
+              "experiment": null,
+              "max_results": 10,
+              "status": "FINISHED"
+            },
+            "summary": "7 run(s) in 'credit-risk-classification': da8b1bd4 logistic_regression f1=0.3373 gate=failed; 0e0f38c7 logistic_regression f1=0.6575 gate=passed; 4a6e4255 logistic_regression f1=0.6309 gate=passed; 3fcf9fac gradient_boosting f1=0.5872 gate=failed; 2e132372 random_forest f1=0.6466 gate=passed",
+            "error": null
+          }
+        ],
+        "pending_confirmations": [],
+        "systems_consulted": [
+          "airflow",
+          "mlflow"
+        ],
+        "grounding": {
+          "grounded": true,
+          "checked_values": 10,
+          "unsupported_values": [],
+          "note": ""
+        },
+        "usage": {
+          "input_tokens": 26598,
+          "output_tokens": 1003
+        },
+        "duration_ms": 109947.7,
+        "created_at": "2026-11-15T11:54:07.993839Z"
+      }
+    }
+  ]
+}

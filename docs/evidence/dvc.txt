@@ -1,0 +1,73 @@
+# git log --oneline --decorate (dataset version commits + tags)
+fb0014b (HEAD -> main, tag: data-v2.0, origin/main) data: credit-risk v2.0 - append new batch (1000 applications)
+cb20f7f (tag: data-v1.0) data: credit-risk v1.0 - initial extract (700 applications)
+d493449 feat(llm): support any OpenAI-compatible provider (Gemini, Mistral, Cerebras, Groq, OpenRouter)
+09223ba fix(scripts): handle missing data/raw/.gitignore and keep LF endings in bootstrap
+
+# git tag -n
+data-v1.0       Dataset v1.0: data: credit-risk v1.0 - initial extract (700 applications)
+data-v2.0       Dataset v2.0: data: credit-risk v2.0 - append new batch (1000 applications)
+
+# .dvc pointer at each dataset version
+## data-v1.0
+outs:
+- md5: d363312212783254d245be7dd5c2514d
+  size: 95402
+  hash: md5
+  path: credit_risk.csv
+## data-v2.0
+outs:
+- md5: 21e9a847a6998b24add1efc1fc1ed885
+  size: 136318
+  hash: md5
+  path: credit_risk.csv
+
+# dvc remote list
+localstore      C:\Users\Hp\OneDrive\Desktop\.dvc-storage       (default)
+
+# dvc diff data-v1.0 data-v2.0
+Modified:
+    data\raw\credit_risk.csv
+
+files summary: 1 modified
+
+# dvc dag
++------------------------------+ 
+| data\raw\credit_risk.csv.dvc | 
++------------------------------+ 
+                *                
+                *                
+                *                
+         +------------+          
+         | preprocess |          
+         +------------+          
+          **         **          
+        **             *         
+       *                **       
+ +-------+                *      
+ | train |              **       
+ +-------+             *         
+          **         **          
+            **     **            
+              *   *              
+          +----------+           
+          | evaluate |           
+          +----------+           
+
+# dvc repro (reproduces the champion's metrics exactly: f1=0.6575)
+{
+  "accuracy": 0.75,
+  "precision": 0.5581,
+  "recall": 0.8,
+  "f1": 0.6575,
+  "roc_auc": 0.8058,
+  "test_rows": 200,
+  "quality_gate_passed": true
+}
+# dvc status
+Data and pipelines are up to date.
+
+# dvc list . data --dvc-only -R
+processed\test.csv
+processed\train.csv
+raw\credit_risk.csv
