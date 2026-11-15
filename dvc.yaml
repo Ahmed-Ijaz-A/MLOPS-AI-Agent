@@ -1,0 +1,36 @@
+# Reproducible training pipeline:  dvc repro
+# (Airflow orchestrates the same stage functions in dags/training_pipeline.py.)
+stages:
+  preprocess:
+    cmd: python -m training.train preprocess
+    deps:
+      - data/raw/credit_risk.csv
+      - training/pipeline.py
+      - training/data.py
+    params:
+      - dataset
+      - preprocess
+    outs:
+      - data/processed/train.csv
+      - data/processed/test.csv
+
+  train:
+    cmd: python -m training.train fit
+    deps:
+      - data/processed/train.csv
+      - training/pipeline.py
+    params:
+      - train
+    outs:
+      - models/model.joblib
+
+  evaluate:
+    cmd: python -m training.train evaluate
+    deps:
+      - models/model.joblib
+      - data/processed/test.csv
+    params:
+      - quality_gate
+    metrics:
+      - reports/metrics.json:
+          cache: false
