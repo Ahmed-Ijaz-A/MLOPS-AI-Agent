@@ -35,9 +35,8 @@ def dvc(*args: str, check: bool = True) -> str:
 
 def set_params_version(version: str) -> None:
     p = ROOT / "params.yaml"
-    p.write_text(
-        re.sub(r"(?m)^(  version: ).*$", rf"\g<1>{version}", p.read_text(encoding="utf-8"), count=1), encoding="utf-8"
-    )
+    text = re.sub(r"(?m)^(  version: ).*$", rf"\g<1>{version}", p.read_text(encoding="utf-8"), count=1)
+    p.write_text(text, encoding="utf-8", newline="\n")  # keep LF endings on Windows
 
 
 def make_version(version: str, message: str) -> None:
@@ -46,7 +45,9 @@ def make_version(version: str, message: str) -> None:
     make_dataset(version, ROOT / DATA)
     set_params_version(version)
     dvc("add", DATA)
-    run("git", "add", f"{DATA}.dvc", "data/raw/.gitignore", "params.yaml")
+    # DVC only writes data/raw/.gitignore when the root .gitignore doesn't already cover the file
+    extra = ["data/raw/.gitignore"] if (ROOT / "data/raw/.gitignore").exists() else []
+    run("git", "add", f"{DATA}.dvc", "params.yaml", *extra)
     run("git", "commit", "-m", message)
     run("git", "tag", "-a", f"data-{version}", "-m", f"Dataset {version}: {message}")
     dvc("push")
