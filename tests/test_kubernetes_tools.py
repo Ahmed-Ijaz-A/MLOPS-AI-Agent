@@ -265,3 +265,26 @@ def test_no_kubeconfig_is_unavailable(make_executor):
 
 def test_unknown_pod_is_invalid_request(make_executor):
     assert run(make_executor, healthy_cluster(), "k8s_get_pod_status", {"pod": "ghost"}).status == "invalid_request"
+
+
+def test_crash_correlated_with_misconfigured_configmap(make_executor):
+    pods = [
+        make_pod(
+            "inference-api-m-1", ready=False, restarts=3, waiting="CrashLoopBackOff", last_term="Error", exit_code=3
+        )
+    ]
+    logs = {
+        ("inference-api-m-1", True): "ERROR FATAL: model file not found at MODEL_PATH=/app/model/model-MISSING.joblib"
+    }
+    core = FakeCore(
+        pods=pods,
+        services=[make_service()],
+        logs=logs,
+        configmaps={"inference-config": {"MODEL_PATH": "/app/model/model-MISSING.joblib", "LOG_LEVEL": "INFO"}},
+    )
+    k8s = k8s_clients(core, FakeApps(deployments=[make_deployment(replicas=1, ready=0)]))
+    r = run(make_executor, k8s, "k8s_diagnose_deployment")
+    cm = next(f for f in r.data["findings"] if f["issue"] == "Misconfigured ConfigMap value")
+    assert "MODEL_PATH" in cm["evidence"] and "inference-config" in cm["suggested_fix"]
+    assert not any("LOG_LEVEL" in f["evidence"] for f in r.data["findings"])  # 'INFO' isn't in an error line
+    assert r.data["configmaps"]["inference-config"]["MODEL_PATH"].endswith("MISSING.joblib")

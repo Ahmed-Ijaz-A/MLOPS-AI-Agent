@@ -146,6 +146,22 @@ _ERR_PATTERNS = re.compile(
 )
 
 
+def _format_error_detail(detail: Any) -> str:
+    """Airflow 3 structured logs carry exceptions as [{exc_type, exc_value, frames:[...]}] - render readably."""
+    if isinstance(detail, list) and detail and all(isinstance(d, dict) for d in detail):
+        parts = []
+        for d in detail:
+            frames = d.get("frames") or []
+            where = (
+                f" (at {frames[-1].get('filename', '?').rsplit('/', 1)[-1]}:{frames[-1].get('lineno')})"
+                if frames
+                else ""
+            )
+            parts.append(f"{d.get('exc_type', 'Exception')}: {d.get('exc_value', '')}{where}")
+        return "Exception: " + " <- caused by ".join(parts)
+    return str(detail)[:1500]
+
+
 def _log_lines(body: Any) -> list[str]:
     content = body.get("content", body) if isinstance(body, dict) else body
     lines: list[str] = []
@@ -160,7 +176,7 @@ def _log_lines(body: Any) -> list[str]:
                 extra = item.get("error_detail")
                 lines.append(f"{ts} {lvl.upper()} {ev}".strip())
                 if extra:
-                    lines.append(str(extra)[:1500])
+                    lines.append(_format_error_detail(extra))
             elif isinstance(item, list | tuple) and len(item) == 2:  # legacy [(host, text)]
                 lines.extend(str(item[1]).splitlines())
             else:

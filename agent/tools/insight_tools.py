@@ -129,19 +129,35 @@ def register(reg: ToolRegistry) -> None:
             try:
                 af = ctx.client("airflow")
                 runs = af.dag_runs("ml_training_pipeline", 5)
-                if runs:
-                    latest = runs[0]
+                # Deliberate failure-injection drills are not evidence about the model: judge the most recent
+                # *genuine* run, and report the drills that were skipped.
+                drills = [r for r in runs if (r.get("conf") or {}).get("inject_failure", "none") not in ("none", "")]
+                genuine = [r for r in runs if r not in drills]
+                if drills:
+                    facts["ignored_failure_injection_runs"] = [
+                        {
+                            "run_id": r.get("dag_run_id"),
+                            "inject_failure": r["conf"]["inject_failure"],
+                            "state": r.get("state"),
+                        }
+                        for r in drills
+                    ]
+                if genuine:
+                    latest = genuine[0]
                     rid = latest.get("dag_run_id") or latest.get("run_id")
                     tis = {t["task_id"]: t.get("state") for t in af.task_instances("ml_training_pipeline", rid)}
                     facts["latest_pipeline_run"] = {"run_id": rid, "state": latest.get("state"), "tasks": tis}
                     gate_failed = tis.get("quality_gate") == "failed"
+                    note = f" ({len(drills)} failure-injection drill run(s) ignored)" if drills else ""
                     rules.append(
                         _rule(
                             "failed_quality_gate",
                             gate_failed,
-                            f"latest run {rid} is {latest.get('state')}; quality_gate={tis.get('quality_gate')}",
+                            f"latest genuine run {rid} is {latest.get('state')}; quality_gate={tis.get('quality_gate')}{note}",
                         )
                     )
+                elif runs:
+                    rules.append(_rule("failed_quality_gate", False, "only failure-injection drill runs recorded"))
                 else:
                     rules.append(_rule("failed_quality_gate", False, "no pipeline runs recorded"))
             except Exception as exc:

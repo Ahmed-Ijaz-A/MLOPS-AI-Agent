@@ -137,3 +137,22 @@ def test_values_from_failed_tools_do_not_count():
 
 def test_citations_are_not_treated_as_values():
     assert verify("See [E12] and [E3].", []).grounded
+
+
+def test_failure_injection_drills_are_not_evidence(make_executor, repo_with_md5):
+    runs, tasks = pipeline_runs()
+    genuine_ok = runs[1:]  # latest genuine run succeeded
+    drill = {"dag_run_id": "manual__drill", "state": "failed", "conf": {"inject_failure": "low_quality"}}
+    mock = AirflowMock(runs=[drill, *genuine_ok], tasks={**tasks, "manual__drill": tasks[runs[0]["dag_run_id"]]})
+    clients = {
+        "mlflow": FakeMlflow(
+            runs={RUN: fake_run(RUN)}, versions={"3": fake_version("3", RUN)}, aliases={"champion": "3"}
+        ),
+        "kubernetes": healthy_cluster(),
+        "airflow": AirflowClient("http://airflow.test", "airflow", "pw", transport=mock.transport()),
+    }
+    r = make_executor(clients, settings_override=repo_with_md5("md5v2")).execute("assess_retraining_need", {})
+    gate = next(x for x in r.data["rules"] if x["rule"] == "failed_quality_gate")
+    assert gate["fired"] is False and "drill" in gate["evidence"]
+    assert r.data["facts"]["ignored_failure_injection_runs"][0]["inject_failure"] == "low_quality"
+    assert r.data["decision"] == "no_retraining_needed"

@@ -190,6 +190,7 @@ def diagnose(
     events: list[dict[str, Any]],
     ready_endpoints: int | None,
     logs: dict[str, list[str]],
+    configmaps: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     findings: list[dict[str, str]] = []
 
@@ -264,6 +265,20 @@ def diagnose(
                 f"{probe[0]['message'] if probe else 'No probe event captured.'}",
                 "Check the /ready endpoint and model loading; the pod receives no traffic until Ready.",
             )
+
+    # Correlate crash logs with configuration: a ConfigMap value quoted in a crash log is the likely culprit.
+    crash_text = "\n".join(ln for lines in logs.values() for ln in lines if _LOG_ERR.search(ln))
+    for cm_name, data in (configmaps or {}).items():
+        for key, value in (data or {}).items():
+            if isinstance(value, str) and len(value) >= 4 and value in crash_text:
+                line = next(ln for ln in crash_text.splitlines() if value in ln)
+                add(
+                    "critical",
+                    "Misconfigured ConfigMap value",
+                    f"ConfigMap {cm_name} key {key}={value!r} appears in the crash log: {line.strip()[:200]}",
+                    f"Correct {key} in ConfigMap {cm_name} (or revert the recent ConfigMap change), then restart the "
+                    "deployment. The container image itself is not implicated by this evidence.",
+                )
 
     if ready_endpoints == 0:
         add(
@@ -574,8 +589,17 @@ def register(reg: ToolRegistry) -> None:
     )
     def diagnose_deployment(args: DeploymentArgs, ctx: ToolContext) -> ToolOutput:
         k = _k(ctx)
+        configmaps: dict[str, dict[str, str]] = {}
         try:
-            dep = _deployment_row(_call(k.apps.read_namespaced_deployment, args.deployment, args.namespace))
+            raw_dep = _call(k.apps.read_namespaced_deployment, args.deployment, args.namespace)
+            dep = _deployment_row(raw_dep)
+            for src in raw_dep.spec.template.spec.containers[0].env_from or []:
+                if src.config_map_ref:
+                    try:
+                        cm = _call(k.core.read_namespaced_config_map, src.config_map_ref.name, args.namespace)
+                        configmaps[src.config_map_ref.name] = dict(cm.data or {})
+                    except ToolInputError:
+                        configmaps[src.config_map_ref.name] = {}
         except ToolInputError:
             dep = None
         selector = dep["selector"] if dep else {"app.kubernetes.io/name": args.deployment}
@@ -591,13 +615,14 @@ def register(reg: ToolRegistry) -> None:
                 except Exception:
                     logs[p["name"]] = []
         endpoints = _ready_endpoints(ctx, args.namespace, selector)
-        result = diagnose(dep, pods, relevant, endpoints, logs)
+        result = diagnose(dep, pods, relevant, endpoints, logs, configmaps)
         for p in pods:
             p.pop("labels", None)
         data = {
             "deployment": dep,
             "pods": pods,
             "ready_endpoints": endpoints,
+            "configmaps": configmaps,
             "events": relevant[:15],
             "crash_logs": {k2: v[-15:] for k2, v in logs.items()},
             **result,

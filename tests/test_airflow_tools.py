@@ -164,3 +164,25 @@ def test_unknown_run_is_invalid_request(make_executor, mock):
 def test_malformed_ids_rejected(make_executor, mock, bad):
     r = executor(make_executor, mock).execute("airflow_get_dag_run", {"dag_id": bad})
     assert r.status == "invalid_request"
+
+
+def test_structured_airflow3_exceptions_rendered_readably(make_executor, mock):
+    run_id = mock.runs[0]["dag_run_id"]
+    mock.logs[(run_id, "evaluate_and_log")] = [
+        {
+            "timestamp": "t",
+            "level": "error",
+            "event": "Task failed with exception",
+            "error_detail": [
+                {
+                    "exc_type": "ModuleNotFoundError",
+                    "exc_value": "No module named 'skops'",
+                    "frames": [{"filename": "/x/mlflow/sklearn/__init__.py", "lineno": 701}],
+                }
+            ],
+        },
+    ]
+    r = executor(make_executor, mock).execute(
+        "airflow_get_task_logs", {"run_id": run_id, "task_id": "evaluate_and_log"}
+    )
+    assert r.data["root_cause_line"] == "Exception: ModuleNotFoundError: No module named 'skops' (at __init__.py:701)"
