@@ -1,0 +1,217 @@
+name: CD
+
+# Continuous delivery.
+#   * main  -> runs only after CI succeeded for that commit: rebuild the model from DVC-verified data,
+#              build + push both images to GHCR, deploy to an ephemeral kind "staging" cluster and verify.
+#   * v*.*.* tag -> the same, with semver image tags, plus a GitHub Release carrying image digests,
+#              the dataset md5 and the model metrics.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.event.workflow_run.head_sha || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    # On workflow_run, only deliver commits whose CI passed.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      inference_image: ${{ steps.meta.outputs.inference_image }}
+      inference_digest: ${{ steps.push_inference.outputs.digest }}
+      agent_digest: ${{ steps.push_agent.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Release metadata
+        id: meta
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF#refs/tags/v}"; else VERSION="sha-${SHA::7}"; fi
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "version=$VERSION"
+            echo "sha=$SHA"
+            echo "inference_repo=$REGISTRY/$OWNER/mlops-inference"
+            echo "agent_repo=$REGISTRY/$OWNER/mlops-agent"
+            echo "inference_image=$REGISTRY/$OWNER/mlops-inference:model-v$VERSION"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing version $VERSION ($SHA)"
+
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: pip, cache-dependency-path: pyproject.toml}
+      - run: pip install -e .
+
+      - name: Rebuild model from DVC-verified data (fails if data md5 != .dvc or the quality gate fails)
+        run: python scripts/package_model.py --version "${{ steps.meta.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-model
+          path: serving/model/
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push inference image
+        id: push_inference
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: MODEL_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ${{ steps.meta.outputs.inference_image }}
+            ${{ steps.meta.outputs.inference_repo }}:sha-${{ steps.meta.outputs.sha }}
+            ${{ startsWith(github.ref, 'refs/tags/v') && format('{0}:latest', steps.meta.outputs.inference_repo) || '' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=inference
+          cache-to: type=gha,mode=max,scope=inference
+
+      - name: Build and push agent image
+        id: push_agent
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.agent
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.agent_repo }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.agent_repo }}:sha-${{ steps.meta.outputs.sha }}
+            ${{ startsWith(github.ref, 'refs/tags/v') && format('{0}:latest', steps.meta.outputs.agent_repo) || '' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,mode=max,scope=agent
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published images"
+            echo "| image | digest |"
+            echo "|---|---|"
+            echo "| \`${{ steps.meta.outputs.inference_image }}\` | \`${{ steps.push_inference.outputs.digest }}\` |"
+            echo "| \`${{ steps.meta.outputs.agent_repo }}:${{ steps.meta.outputs.version }}\` | \`${{ steps.push_agent.outputs.digest }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: pip, cache-dependency-path: pyproject.toml}
+      - run: pip install -e .
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-model
+          path: serving/model/
+
+      - name: Pull the published image from GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          docker pull "${{ needs.build-and-push.outputs.inference_image }}"
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: staging
+
+      - name: Deploy release to staging
+        run: |
+          IMAGE="${{ needs.build-and-push.outputs.inference_image }}"
+          kind load docker-image "$IMAGE" --name staging
+          python scripts/render_manifests.py --image "$IMAGE" --metadata serving/model/metadata.json | kubectl apply -f -
+          kubectl -n mlops-agent rollout status deployment/inference-api --timeout=180s
+          kubectl -n mlops-agent get deploy,pods,svc -o wide
+
+      - name: Smoke test through the ClusterIP Service
+        run: |
+          kubectl -n mlops-agent port-forward svc/inference-api 18080:80 &
+          for _ in $(seq 1 20); do curl -sf localhost:18080/ready && break; sleep 1; done
+          curl -sf localhost:18080/version | tee version.json
+          python -c "import json; v=json.load(open('version.json')); assert v['model_version']=='${{ needs.build-and-push.outputs.version }}', v; print('serving version OK')"
+          curl -sf -X POST localhost:18080/predict -H 'content-type: application/json' -d '{"instances":[{"duration":24,"credit_amount":4000,"installment_commitment":3,"residence_since":2,"age":35,"existing_credits":1,"num_dependents":1,"checking_status":"<0","credit_history":"existing paid","purpose":"new car","savings_status":"<100","employment":"1<=X<4","personal_status":"male single","other_parties":"none","property_magnitude":"car","other_payment_plans":"none","housing":"own","job":"skilled","own_telephone":"none","foreign_worker":"yes"}]}'
+
+      - name: Agent verifies the staging deployment (offline planner, real Kubernetes API)
+        run: |
+          python -m agent.main --offline --json "Is the prediction API healthy, and which model version is deployed?" > verify.json
+          python - <<'EOF'
+          import json
+          d = json.load(open("verify.json"))
+          by_tool = {t["tool"]: t for t in d["tool_calls"]}
+          diag = by_tool["k8s_diagnose_deployment"]
+          print(diag["summary"])
+          assert diag["status"] == "ok" and "HEALTHY" in diag["summary"], diag
+          EOF
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-and-push, deploy-staging]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-model
+          path: release-model/
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import json, os
+          m = json.load(open("release-model/metadata.json"))
+          lines = [
+              f"## Credit-risk model {m['model_version']}",
+              "",
+              "| | |", "|---|---|",
+              f"| Inference image | `${{ needs.build-and-push.outputs.inference_image }}` |",
+              f"| Inference digest | `${{ needs.build-and-push.outputs.inference_digest }}` |",
+              f"| Agent digest | `${{ needs.build-and-push.outputs.agent_digest }}` |",
+              f"| Dataset | {m['dataset_version']} (md5 `{m['dataset_md5']}`, verified against DVC) |",
+              f"| Git commit | `{m['git_commit']}` |",
+              f"| Model | {m['model_type']} |",
+          ] + [f"| {k} | {v} |" for k, v in m["metrics"].items()] + [
+              "", "Staging deployment on kind passed: rollout, /predict smoke test, agent health verification."]
+          open("notes.md", "w").write("\n".join(lines) + "\n")
+          EOF
+          tar czf release-model.tar.gz -C release-model .
+          gh release create "$GITHUB_REF_NAME" release-model.tar.gz --title "$GITHUB_REF_NAME" --notes-file notes.md

@@ -125,7 +125,7 @@ jobs:
       - name: Container smoke test
         run: |
           docker run -d --name inf -p 8080:8080 mlops-inference:model-v1
-          for i in $(seq 1 30); do curl -sf localhost:8080/ready && break; sleep 1; done
+          for _ in $(seq 1 30); do curl -sf localhost:8080/ready && break; sleep 1; done
           curl -sf localhost:8080/version
           curl -sf -X POST localhost:8080/predict -H 'content-type: application/json' -d '{"instances":[{"duration":24,"credit_amount":4000,"installment_commitment":3,"residence_since":2,"age":35,"existing_credits":1,"num_dependents":1,"checking_status":"<0","credit_history":"existing paid","purpose":"new car","savings_status":"<100","employment":"1<=X<4","personal_status":"male single","other_parties":"none","property_magnitude":"car","other_payment_plans":"none","housing":"own","job":"skilled","own_telephone":"none","foreign_worker":"yes"}]}'
           docker rm -f inf

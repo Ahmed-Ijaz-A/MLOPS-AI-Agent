@@ -143,3 +143,59 @@ def test_no_secrets_committed():
     for f in list(ROOT.glob("*.py")) + list((ROOT / "agent").rglob("*.py")) + list((ROOT / "kubernetes").glob("*")):
         text = f.read_text(encoding="utf-8", errors="ignore")
         assert "sk-ant-api" not in text, f
+
+
+def test_cd_pipeline_structure():
+    cd = yaml.safe_load((ROOT / ".github" / "workflows" / "cd.yml").read_text(encoding="utf-8"))
+    triggers = cd.get("on") or cd.get(True)
+    assert triggers["workflow_run"]["workflows"] == ["CI"]  # main is delivered only after CI
+    assert "v*.*.*" in triggers["push"]["tags"]
+    jobs = cd["jobs"]
+    assert set(jobs) == {"build-and-push", "deploy-staging", "release"}
+    assert "conclusion == 'success'" in jobs["build-and-push"]["if"]
+    assert jobs["build-and-push"]["permissions"]["packages"] == "write"
+    steps = " ".join(str(s.get("run", "")) + str(s.get("with", "")) for s in jobs["build-and-push"]["steps"])
+    assert "package_model.py" in steps and "Dockerfile.agent" in steps and "ghcr.io" in str(cd["env"]["REGISTRY"])
+    assert jobs["deploy-staging"]["needs"] == "build-and-push"
+    staging = " ".join(str(s.get("run", "")) for s in jobs["deploy-staging"]["steps"])
+    assert "rollout status" in staging and "/predict" in staging and "agent.main" in staging
+    assert jobs["release"]["if"].startswith("startsWith(github.ref, 'refs/tags/v')")
+    assert jobs["release"]["permissions"]["contents"] == "write"
+
+
+def test_agent_image_runs_as_non_root():
+    text = (ROOT / "Dockerfile.agent").read_text(encoding="utf-8")
+    assert "USER 10002" in text and "HEALTHCHECK" in text and "api.main:app" in text
+
+
+def test_release_manifest_rendering():
+    import shutil
+    import subprocess
+    import sys
+
+    if shutil.which("kubectl") is None:
+        pytest.skip("kubectl not installed")
+    meta = ROOT / "tests" / "_meta.json"
+    meta.write_text('{"model_version": "9.9.9", "dataset_version": "v2.0", "run_id": null}', encoding="utf-8")
+    try:
+        out = subprocess.run(
+            [
+                sys.executable,
+                "scripts/render_manifests.py",
+                "--image",
+                "ghcr.io/x/mlops-inference:model-v9.9.9",
+                "--metadata",
+                str(meta),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    finally:
+        meta.unlink()
+    docs = {d["kind"]: d for d in yaml.safe_load_all(out) if d and d["kind"] in ("Deployment", "ConfigMap")}
+    dep = docs["Deployment"]
+    assert dep["spec"]["template"]["spec"]["containers"][0]["image"] == "ghcr.io/x/mlops-inference:model-v9.9.9"
+    assert dep["spec"]["template"]["metadata"]["annotations"]["mlops.agent/model-version"] == "9.9.9"
+    assert docs["ConfigMap"]["data"]["MODEL_VERSION"] == "9.9.9"
