@@ -1,0 +1,185 @@
+{
+  "incident": "Unexpected failure: evaluate_and_log crashed in Airflow (missing skops)",
+  "dag_run": {
+    "evidence_id": "E1",
+    "tool": "airflow_get_dag_run",
+    "status": "ok",
+    "system": "airflow",
+    "summary": "Run manual__2026-11-15T11:28:06.689466+00:00_xjWrLxDM of ml_training_pipeline is failed: validate_dataset=success, preprocess_data=success, train_model=success, quality_gate=upstream_failed, register_model=upstream_failed, evaluate_and_log=failed.",
+    "data": {
+      "run_id": "manual__2026-11-15T11:28:06.689466+00:00_xjWrLxDM",
+      "state": "failed",
+      "run_type": "manual",
+      "logical_date": null,
+      "run_after": "2026-11-15T11:28:06.689466Z",
+      "start_date": "2026-11-15T11:28:07.782039Z",
+      "end_date": "2026-11-15T11:29:41.538524Z",
+      "conf": {
+        "reason": "first end-to-end run"
+      },
+      "tasks": [
+        {
+          "task_id": "validate_dataset",
+          "state": "success",
+          "try_number": 1,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:28:08.519988Z",
+          "end_date": "2026-11-15T11:28:26.754224Z",
+          "duration_s": 18.23
+        },
+        {
+          "task_id": "preprocess_data",
+          "state": "success",
+          "try_number": 1,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:28:27.827487Z",
+          "end_date": "2026-11-15T11:28:33.190174Z",
+          "duration_s": 5.36
+        },
+        {
+          "task_id": "train_model",
+          "state": "success",
+          "try_number": 1,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:28:34.165414Z",
+          "end_date": "2026-11-15T11:28:38.378859Z",
+          "duration_s": 4.21
+        },
+        {
+          "task_id": "quality_gate",
+          "state": "upstream_failed",
+          "try_number": 0,
+          "max_tries": 0,
+          "start_date": "2026-11-15T11:29:39.277292Z",
+          "end_date": "2026-11-15T11:29:39.277292Z",
+          "duration_s": 0.0
+        },
+        {
+          "task_id": "register_model",
+          "state": "upstream_failed",
+          "try_number": 0,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:29:40.449080Z",
+          "end_date": "2026-11-15T11:29:40.449080Z",
+          "duration_s": 0.0
+        },
+        {
+          "task_id": "evaluate_and_log",
+          "state": "failed",
+          "try_number": 3,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:29:30.529714Z",
+          "end_date": "2026-11-15T11:29:38.489428Z",
+          "duration_s": 7.96
+        }
+      ]
+    },
+    "error": null,
+    "duration_ms": 140.8,
+    "arguments": {
+      "dag_id": "ml_training_pipeline",
+      "run_id": "manual__2026-11-15T11:28:06.689466+00:00_xjWrLxDM"
+    },
+    "confirmation": null
+  },
+  "failed_tasks": {
+    "evidence_id": "E1",
+    "tool": "airflow_get_failed_tasks",
+    "status": "ok",
+    "system": "airflow",
+    "summary": "Run manual__2026-11-15T11:28:06.689466+00:00_xjWrLxDM (failed): failed tasks ['evaluate_and_log']; blocked downstream ['quality_gate', 'register_model'].",
+    "data": {
+      "run": {
+        "run_id": "manual__2026-11-15T11:28:06.689466+00:00_xjWrLxDM",
+        "state": "failed",
+        "run_type": "manual",
+        "logical_date": null,
+        "run_after": "2026-11-15T11:28:06.689466Z",
+        "start_date": "2026-11-15T11:28:07.782039Z",
+        "end_date": "2026-11-15T11:29:41.538524Z",
+        "conf": {
+          "reason": "first end-to-end run"
+        }
+      },
+      "failed_tasks": [
+        {
+          "task_id": "evaluate_and_log",
+          "state": "failed",
+          "try_number": 3,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:29:30.529714Z",
+          "end_date": "2026-11-15T11:29:38.489428Z",
+          "duration_s": 7.96
+        }
+      ],
+      "blocked_tasks": [
+        {
+          "task_id": "quality_gate",
+          "state": "upstream_failed",
+          "try_number": 0,
+          "max_tries": 0,
+          "start_date": "2026-11-15T11:29:39.277292Z",
+          "end_date": "2026-11-15T11:29:39.277292Z",
+          "duration_s": 0.0
+        },
+        {
+          "task_id": "register_model",
+          "state": "upstream_failed",
+          "try_number": 0,
+          "max_tries": 2,
+          "start_date": "2026-11-15T11:29:40.449080Z",
+          "end_date": "2026-11-15T11:29:40.449080Z",
+          "duration_s": 0.0
+        }
+      ]
+    },
+    "error": null,
+    "duration_ms": 1624.1,
+    "arguments": {
+      "dag_id": "ml_training_pipeline",
+      "run_id": null
+    },
+    "confirmation": null
+  },
+  "task_logs": {
+    "evidence_id": "E1",
+    "tool": "airflow_get_task_logs",
+    "status": "ok",
+    "system": "airflow",
+    "summary": "evaluate_and_log try 3: 11 log lines; root-cause line: [{'exc_type': 'ModuleNotFoundError', 'exc_value': \"No module named 'skops'\", 'exc_notes': [], 'syntax_error': None, 'is_cause': False, 'frames': [{'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno': 920, 'name': 'run'}, {'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno",
+    "data": {
+      "task_id": "evaluate_and_log",
+      "try_number": 3,
+      "error_lines": [
+        "2026-11-15T11:29:38.144218Z WARNING Hint: Inferred schema contains integer column(s). Integer columns in Python cannot represent missing values. If your input data contains missing values at inference time, it will be encoded as floats and will cause a schema enforcement error. The best way to avoid this problem is to infer the model schema based on a realistic data sample (training dataset) that ",
+        "2026-11-15T11:29:38.168728Z WARNING Hint: Inferred schema contains integer column(s). Integer columns in Python cannot represent missing values. If your input data contains missing values at inference time, it will be encoded as floats and will cause a schema enforcement error. The best way to avoid this problem is to infer the model schema based on a realistic data sample (training dataset) that ",
+        "2026-11-15T11:29:38.418339Z ERROR Task failed with exception",
+        "[{'exc_type': 'ModuleNotFoundError', 'exc_value': \"No module named 'skops'\", 'exc_notes': [], 'syntax_error': None, 'is_cause': False, 'frames': [{'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno': 920, 'name': 'run'}, {'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno"
+      ],
+      "root_cause_line": "[{'exc_type': 'ModuleNotFoundError', 'exc_value': \"No module named 'skops'\", 'exc_notes': [], 'syntax_error': None, 'is_cause': False, 'frames': [{'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno': 920, 'name': 'run'}, {'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno",
+      "tail": [
+        "::group::Log message source details",
+        "::endgroup::",
+        "2026-11-15T11:29:30.618776Z INFO DAG bundles loaded: dags-folder",
+        "2026-11-15T11:29:30.622521Z INFO Filling up the DagBag from /opt/airflow/dags/training_pipeline.py",
+        "2026-11-15T11:29:36.229714Z INFO evaluation: {'metrics': {'accuracy': 0.75, 'precision': 0.5581, 'recall': 0.8, 'f1': 0.6575, 'roc_auc': 0.8058, 'test_rows': 200}, 'confusion_matrix': {'tn': 102, 'fp': 38, 'fn': 12, 'tp': 48}}",
+        "2026-11-15T11:29:38.144218Z WARNING Hint: Inferred schema contains integer column(s). Integer columns in Python cannot represent missing values. If your input data contains missing values at inference time, it will be encoded as floats and will cause a schema enforcement error. The best way to avoid this problem is to infer the model schema based on a realistic data sample (training dataset) that ",
+        "2026-11-15T11:29:38.168728Z WARNING Hint: Inferred schema contains integer column(s). Integer columns in Python cannot represent missing values. If your input data contains missing values at inference time, it will be encoded as floats and will cause a schema enforcement error. The best way to avoid this problem is to infer the model schema based on a realistic data sample (training dataset) that ",
+        "2026-11-15T11:29:38.324716Z INFO \ud83c\udfc3 View run airflow-logistic_regression at: http://mlflow:5000/#/experiments/1/runs/c63af03f203e4fd5a23d246c22ed6db0",
+        "2026-11-15T11:29:38.325996Z INFO \ud83e\uddea View experiment at: http://mlflow:5000/#/experiments/1",
+        "2026-11-15T11:29:38.418339Z ERROR Task failed with exception",
+        "[{'exc_type': 'ModuleNotFoundError', 'exc_value': \"No module named 'skops'\", 'exc_notes': [], 'syntax_error': None, 'is_cause': False, 'frames': [{'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno': 920, 'name': 'run'}, {'filename': '/home/airflow/.local/lib/python3.12/site-packages/airflow/sdk/execution_time/task_runner.py', 'lineno"
+      ]
+    },
+    "error": null,
+    "duration_ms": 134.6,
+    "arguments": {
+      "dag_id": "ml_training_pipeline",
+      "run_id": "manual__2026-11-15T11:28:06.689466+00:00_xjWrLxDM",
+      "task_id": "evaluate_and_log",
+      "try_number": null,
+      "tail": 40
+    },
+    "confirmation": null
+  }
+}
