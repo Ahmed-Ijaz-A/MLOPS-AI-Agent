@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -129,9 +131,11 @@ def create_app(agent: Agent | None = None) -> FastAPI:
             "airflow": ("airflow_list_dags", {}),
             "kubernetes": ("k8s_list_workloads", {}),
         }
+        with ThreadPoolExecutor(max_workers=4) as pool:  # probe all systems concurrently
+            futures = {s: pool.submit(a.executor.execute, tool, args) for s, (tool, args) in probes.items()}
         out = {}
-        for system, (tool, args) in probes.items():
-            r = a.executor.execute(tool, args)
+        for system, fut in futures.items():
+            r = fut.result()
             out[system] = {"status": r.status, "detail": (r.summary or r.error or "")[:200], "ms": r.duration_ms}
         return {
             "mode": a.mode,
@@ -139,6 +143,21 @@ def create_app(agent: Agent | None = None) -> FastAPI:
             "provider": settings.resolved_provider,
             "systems": out,
         }
+
+    @app.on_event("startup")
+    def warm_up() -> None:
+        """Create the agent and its integration clients in the background so the first request isn't slow
+        (importing mlflow / kubernetes can take many seconds on a cold start)."""
+
+        def _warm() -> None:
+            a = get_agent()
+            for name in ("mlflow", "kubernetes", "airflow", "dvc"):
+                try:
+                    a.executor.context.client(name)
+                except Exception as exc:  # unavailable services are reported later by the probes
+                    log_event(logger, "warmup_skipped", client=name, error=type(exc).__name__)
+
+        threading.Thread(target=_warm, name="warmup", daemon=True).start()
 
     if STATIC.exists():
         app.mount("/static", StaticFiles(directory=STATIC), name="static")

@@ -275,3 +275,15 @@ def test_planner_extracts_parameters():
     assert steps[0][1] == {"namespace": "mlops-agent", "deployment": "inference-api", "replicas": 4}
     _, steps = planner.plan("trigger training with low quality injection")
     assert steps[0][1]["conf"]["inject_failure"] == "low_quality"
+
+
+def test_zero_width_characters_stripped_from_citations(make_executor, settings):
+    llm = ScriptedLLM([[text_block("**Summary** - healthy [​E1​].")]])
+    resp = _agent(make_executor, settings, llm).chat("status")
+    assert "[E1]" in resp.answer and "​" not in resp.answer
+
+
+def test_fullwidth_citations_normalised(make_executor, settings):
+    llm = ScriptedLLM([[text_block("F1 is high【E2】 and gate passed【E3†L4】.")]])
+    resp = _agent(make_executor, settings, llm).chat("status")
+    assert "[E2]" in resp.answer and "[E3]" in resp.answer and "【" not in resp.answer

@@ -10,6 +10,7 @@ Offline:    deterministic planner + evidence-only composer (same executor, same 
 from __future__ import annotations
 
 import concurrent.futures as cf
+import re
 import threading
 import time
 import uuid
@@ -27,6 +28,7 @@ from agent.tools import build_executor
 from agent.tools.base import RequestTrace, ToolExecutor
 
 logger = get_logger("orchestrator")
+_FULLWIDTH_CITE = re.compile(r"【\s*(E\d+)[^】]*】")
 
 # Which systems a question needs - used by the coverage enforcer.
 _SYSTEM_KEYWORDS = {
@@ -229,6 +231,9 @@ class Agent:
                 "Partial evidence is listed in the tool trace; no unverified conclusions are drawn."
             )
 
+        # Some models wrap citations in zero-width characters; normalise so [E#] links work in the UI.
+        final_text = final_text.translate({0x200B: None, 0x200C: None, 0x200D: None, 0x2060: None, 0xFEFF: None})
+        final_text = _FULLWIDTH_CITE.sub(r"[\1]", final_text)  # 【E1】 / 【E1†L3】 -> [E1]
         if not final_text:
             final_text = "**Summary** - No answer was produced."
         # Persist only the user question + final answer (compact, safe to replay across turns).

@@ -36,3 +36,6 @@ infra/airflow/plugins/
 Thumbs.db
 .idea/
 .vscode/
+
+# Browser automation scratch output
+.playwright-mcp/
