@@ -287,3 +287,9 @@ def test_fullwidth_citations_normalised(make_executor, settings):
     llm = ScriptedLLM([[text_block("F1 is high【E2】 and gate passed【E3†L4】.")]])
     resp = _agent(make_executor, settings, llm).chat("status")
     assert "[E2]" in resp.answer and "[E3]" in resp.answer and "【" not in resp.answer
+
+
+def test_spaced_citations_normalised(make_executor, settings):
+    llm = ScriptedLLM([[text_block("F1 0.66 [ E1 ] and gate [E2 ].")]])
+    resp = _agent(make_executor, settings, llm).chat("status")
+    assert "[E1]" in resp.answer and "[E2]" in resp.answer
