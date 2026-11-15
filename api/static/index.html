@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MLOps Agent Console</title>
+<link rel="stylesheet" href="/static/console.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">◆</span>
+    <div>
+      <h1>MLOps Agent Console</h1>
+      <p class="sub">Evidence-grounded operations over DVC · MLflow · Airflow · Kubernetes</p>
+    </div>
+  </div>
+  <div class="systems" id="systems" aria-label="Integration status">
+    <span class="pill" data-sys="dvc"><i></i>DVC</span>
+    <span class="pill" data-sys="mlflow"><i></i>MLflow</span>
+    <span class="pill" data-sys="airflow"><i></i>Airflow</span>
+    <span class="pill" data-sys="kubernetes"><i></i>Kubernetes</span>
+    <span class="mode" id="mode">…</span>
+    <button class="ghost" id="refresh" title="Re-check integrations">↻</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="chat" aria-label="Conversation">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcome">
+        <h2>What do you need to know?</h2>
+        <p>Every answer is built from live tool calls. Values are cited as <code>[E#]</code> and checked against
+          the evidence on the right. Actions that change state wait for your approval.</p>
+        <div class="chips" id="chips">
+          <button data-q="Find the best recent model, identify the dataset version used to train it, check the deployment status, and explain whether retraining is necessary.">Multi-tool: should we retrain?</button>
+          <button data-q="Which dataset version is current, and how do I reproduce data version v1.0?">Dataset provenance</button>
+          <button data-q="Compare the last five training runs and recommend the best candidate based on F1 score.">Model selection</button>
+          <button data-q="Trigger the model training pipeline and report whether execution succeeded.">Run the pipeline</button>
+          <button data-q="Why is my prediction API unavailable?">Diagnose the API</button>
+          <button data-q="Why did the last training pipeline run fail?">Pipeline failure</button>
+        </div>
+      </div>
+    </div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Ask about datasets, experiments, pipelines or deployments…" maxlength="4000"></textarea>
+      <button type="submit" id="send">Send</button>
+    </form>
+  </section>
+
+  <aside class="evidence" aria-label="Evidence">
+    <div class="ev-head">
+      <h2>Evidence</h2>
+      <span id="ev-meta" class="muted"></span>
+    </div>
+    <div id="approvals"></div>
+    <div id="grounding"></div>
+    <ol class="trace" id="trace"><li class="empty">Tool calls for the selected answer appear here.</li></ol>
+  </aside>
+</main>
+
+<script src="/static/console.js"></script>
+</body>
+</html>
