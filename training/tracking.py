@@ -17,6 +17,7 @@ from training.data import CATEGORICAL, NUMERIC
 
 EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT_NAME", "credit-risk-classification")
 MODEL_NAME = os.environ.get("MLFLOW_REGISTERED_MODEL", "credit-risk-classifier")
+SKOPS_TRUSTED_TYPES = ["sklearn.tree._tree.Tree"]
 
 
 def _setup(tracking_uri: str | None, experiment: str) -> None:
@@ -76,7 +77,11 @@ def log_evaluation(
             mlflow.log_artifact(str(p))
         input_example = sample[[*NUMERIC, *CATEGORICAL]].head(3) if sample is not None else None
         try:
-            mlflow.sklearn.log_model(model, name="model", input_example=input_example)
+            # MLflow 3 serialises sklearn with skops (no arbitrary pickle code execution). Only sklearn's own
+            # tree structure - used by random forest / gradient boosting - is added to the trusted list.
+            mlflow.sklearn.log_model(
+                model, name="model", input_example=input_example, skops_trusted_types=SKOPS_TRUSTED_TYPES
+            )
         except TypeError:  # MLflow 2.x signature
             mlflow.sklearn.log_model(model, artifact_path="model", input_example=input_example)
         return run.info.run_id

@@ -25,6 +25,9 @@ from training import pipeline
 from training.provenance import dataset_provenance
 
 ROOT = Path(__file__).resolve().parent.parent
+for _stream in (sys.stdout, sys.stderr):  # MLflow prints emoji; Windows consoles default to cp1252
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("training.train")
 
