@@ -1,5 +1,5 @@
 dataset:
-  version: v1.0
+  version: v2.0
   path: data/raw/credit_risk.csv
   target: default
 
