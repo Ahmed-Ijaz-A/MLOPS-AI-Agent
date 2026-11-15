@@ -25,6 +25,16 @@ if load_dotenv is not None:
     load_dotenv(PROJECT_ROOT / ".env", override=False)
 
 
+# OpenAI-compatible providers and the env vars that hold their keys (auto-detection order).
+PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
+    "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    "mistral": ("MISTRAL_API_KEY",),
+    "cerebras": ("CEREBRAS_API_KEY",),
+    "groq": ("GROQ_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
+}
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
@@ -32,8 +42,10 @@ def _env(name: str, default: str = "") -> str:
 @dataclass(frozen=True)
 class Settings:
     # LLM
-    llm_provider: str = "auto"  # auto | anthropic | offline
+    llm_provider: str = "auto"  # auto | anthropic | gemini | mistral | cerebras | groq | openrouter | offline
     anthropic_model: str = "claude-opus-5-5"
+    llm_model: str = ""  # model for OpenAI-compatible providers (blank = provider default)
+    llm_base_url: str = ""  # override the provider's endpoint (blank = preset)
     agent_effort: str = "medium"
     anthropic_fallbacks: bool = True
     max_agent_steps: int = 12
@@ -58,18 +70,28 @@ class Settings:
         return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
     @property
+    def resolved_provider(self) -> str:
+        """auto -> Claude if an Anthropic key is set, else the first OpenAI-compatible provider with a key."""
+        if self.llm_provider == "offline" or self.llm_provider == "anthropic" or self.llm_provider in PROVIDER_KEYS:
+            return self.llm_provider
+        if self.has_anthropic_credentials:
+            return "anthropic"
+        for provider, envs in PROVIDER_KEYS.items():
+            if any(os.environ.get(e) for e in envs):
+                return provider
+        return "offline"
+
+    @property
     def use_llm(self) -> bool:
-        if self.llm_provider == "offline":
-            return False
-        if self.llm_provider == "anthropic":
-            return True
-        return self.has_anthropic_credentials
+        return self.resolved_provider != "offline"
 
 
 def load_settings() -> Settings:
     return Settings(
         llm_provider=_env("LLM_PROVIDER", "auto").lower(),
         anthropic_model=_env("ANTHROPIC_MODEL", "claude-opus-5-5"),
+        llm_model=_env("LLM_MODEL") or _env("GEMINI_MODEL"),
+        llm_base_url=_env("LLM_BASE_URL"),
         agent_effort=_env("AGENT_EFFORT", "medium"),
         anthropic_fallbacks=_env("ANTHROPIC_FALLBACKS", "true").lower() in {"1", "true", "yes"},
         max_agent_steps=int(_env("MAX_AGENT_STEPS", "12")),

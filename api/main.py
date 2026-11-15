@@ -133,7 +133,12 @@ def create_app(agent: Agent | None = None) -> FastAPI:
         for system, (tool, args) in probes.items():
             r = a.executor.execute(tool, args)
             out[system] = {"status": r.status, "detail": (r.summary or r.error or "")[:200], "ms": r.duration_ms}
-        return {"mode": a.mode, "model": settings.anthropic_model if a.mode == "llm" else None, "systems": out}
+        return {
+            "mode": a.mode,
+            "model": getattr(a.llm, "model", None),
+            "provider": settings.resolved_provider,
+            "systems": out,
+        }
 
     if STATIC.exists():
         app.mount("/static", StaticFiles(directory=STATIC), name="static")
