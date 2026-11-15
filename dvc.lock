@@ -1,0 +1,83 @@
+schema: '2.0'
+stages:
+  preprocess:
+    cmd: python -m training.train preprocess
+    deps:
+    - path: data/raw/credit_risk.csv
+      hash: md5
+      md5: 21e9a847a6998b24add1efc1fc1ed885
+      size: 136318
+    - path: training/data.py
+      hash: md5
+      md5: e503e209e94d80805c6f5ee735d1cbbf
+      size: 2448
+    - path: training/pipeline.py
+      hash: md5
+      md5: 86ad3217c8bb5a5802d11490c686a9fa
+      size: 9134
+    params:
+      params.yaml:
+        dataset:
+          version: v2.0
+          path: data/raw/credit_risk.csv
+          target: default
+        preprocess:
+          test_size: 0.2
+          random_state: 42
+    outs:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: c2467ee9bf33a6aed811881cab3ed2c1
+      size: 27535
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 824e439e96eede329a8ae5d3369e2e56
+      size: 109064
+  train:
+    cmd: python -m training.train fit
+    deps:
+    - path: data/processed/train.csv
+      hash: md5
+      md5: 824e439e96eede329a8ae5d3369e2e56
+      size: 109064
+    - path: training/pipeline.py
+      hash: md5
+      md5: 86ad3217c8bb5a5802d11490c686a9fa
+      size: 9134
+    params:
+      params.yaml:
+        train:
+          model_type: logistic_regression
+          C: 1.0
+          max_iter: 2000
+          n_estimators: 300
+          max_depth: 8
+          learning_rate: 0.05
+          random_state: 42
+    outs:
+    - path: models/model.joblib
+      hash: md5
+      md5: 59f5a63be11aa13a1449aaa77342c264
+      size: 7649
+  evaluate:
+    cmd: python -m training.train evaluate
+    deps:
+    - path: data/processed/test.csv
+      hash: md5
+      md5: c2467ee9bf33a6aed811881cab3ed2c1
+      size: 27535
+    - path: models/model.joblib
+      hash: md5
+      md5: 59f5a63be11aa13a1449aaa77342c264
+      size: 7649
+    params:
+      params.yaml:
+        quality_gate:
+          min_f1: 0.6
+          min_recall: 0.65
+          min_roc_auc: 0.75
+    outs:
+    - path: reports/metrics.json
+      hash: md5
+      md5: 60f19f3c241832f8f6bdf501c39a0ce9
+      size: 158
