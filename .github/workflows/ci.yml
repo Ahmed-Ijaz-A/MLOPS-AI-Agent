@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  LLM_PROVIDER: offline   # external services (LLM, MLflow, Airflow, K8s) are mocked in ordinary CI runs
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - run: pip install "ruff>=0.6"
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ env.PYTHON_VERSION }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: pip install -e ".[dev]"
+      - name: Configure git (DVC tests build a real repo)
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "ci"
+      - name: pytest with coverage
+        run: pytest --cov --cov-report=term-missing:skip-covered --cov-report=xml --cov-fail-under=75 --junitxml=pytest-report.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            coverage.xml
+            pytest-report.xml
+
+  training-smoke:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: pip, cache-dependency-path: pyproject.toml}
+      - run: pip install -e .
+      - name: Build dataset v2.0 from OpenML and run the full pipeline (no MLflow)
+        run: |
+          python -m training.data --version v2.0 --out data/raw/credit_risk.csv
+          python -m training.train all --no-mlflow
+
+  dag-integrity:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}"}
+      - name: Install Airflow 3.1.0 (official constraints)
+        run: |
+          pip install "apache-airflow==3.1.0" pyyaml \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.1.0/constraints-3.12.txt"
+      - name: Parse DAG with DagBag
+        env:
+          AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+          PROJECT_DIR: ${{ github.workspace }}
+        run: |
+          python - <<'EOF'
+          from airflow.models import DagBag
+          bag = DagBag(dag_folder="dags", include_examples=False)
+          assert not bag.import_errors, bag.import_errors
+          dag = bag.dags["ml_training_pipeline"]
+          order = [t.task_id for t in dag.topological_sort()] if hasattr(dag, "topological_sort") else sorted(dag.task_ids)
+          print("tasks:", order)
+          expected = {"validate_dataset", "preprocess_data", "train_model", "evaluate_and_log", "quality_gate", "register_model"}
+          assert set(dag.task_ids) == expected
+          assert dag.get_task("register_model").upstream_task_ids == {"quality_gate"}
+          assert dag.get_task("train_model").retries == 2 and dag.get_task("quality_gate").retries == 0
+          print("DAG OK")
+          EOF
+
+  manifests:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Kubernetes manifests (kubeconform, strict)
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          kubectl kustomize kubernetes > rendered.yaml
+          ./kubeconform -strict -summary -kubernetes-version 1.30.0 rendered.yaml
+
+  docker-and-kind:
+    runs-on: ubuntu-latest
+    needs: [test, manifests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ env.PYTHON_VERSION }}", cache: pip, cache-dependency-path: pyproject.toml}
+      - run: pip install -e .
+      - name: Build inference image with a smoke model
+        run: |
+          python scripts/build_smoke_model.py
+          docker build -t mlops-inference:model-v1 --build-arg MODEL_VERSION=0 .
+      - name: Container smoke test
+        run: |
+          docker run -d --name inf -p 8080:8080 mlops-inference:model-v1
+          for i in $(seq 1 30); do curl -sf localhost:8080/ready && break; sleep 1; done
+          curl -sf localhost:8080/version
+          curl -sf -X POST localhost:8080/predict -H 'content-type: application/json' -d '{"instances":[{"duration":24,"credit_amount":4000,"installment_commitment":3,"residence_since":2,"age":35,"existing_credits":1,"num_dependents":1,"checking_status":"<0","credit_history":"existing paid","purpose":"new car","savings_status":"<100","employment":"1<=X<4","personal_status":"male single","other_parties":"none","property_magnitude":"car","other_payment_plans":"none","housing":"own","job":"skilled","own_telephone":"none","foreign_worker":"yes"}]}'
+          docker rm -f inf
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+      - name: Deploy to kind and wait for rollout
+        run: |
+          kind load docker-image mlops-inference:model-v1 --name ci
+          kubectl apply -k kubernetes/
+          kubectl -n mlops-agent rollout status deployment/inference-api --timeout=180s
+          kubectl -n mlops-agent get pods,svc -o wide
+      - name: Agent diagnoses the live cluster (offline planner, real Kubernetes API)
+        run: |
+          python -m agent.main --offline --json "Why is my prediction API unavailable?" > diagnosis.json
+          python -c "import json; d=json.load(open('diagnosis.json')); t=d['tool_calls'][0]; print(t['summary']); assert t['status']=='ok' and 'HEALTHY' in t['summary']"
