@@ -7,8 +7,8 @@ Steps
  1. resolve the model version in the MLflow registry and set alias ``champion``
  2. export the sklearn pipeline + provenance metadata into serving/model/
  3. docker build -t mlops-inference:model-v<N>
- 4. kubectl apply -k kubernetes/  (namespace, ConfigMap, Deployment, Service, PDB, RBAC)
- 5. patch image, version label, provenance annotations and ConfigMap MODEL_VERSION; wait for rollout
+ 4. render kubernetes/ (kustomize) with the image, version label, provenance annotations and
+    ConfigMap MODEL_VERSION filled in, apply it once, and wait for the rollout
 """
 
 from __future__ import annotations
@@ -85,49 +85,36 @@ def main() -> None:
     image = f"mlops-inference:model-v{mv.version}"
     sh("docker", "build", "-t", image, "--build-arg", f"MODEL_VERSION={mv.version}", ".")
     ctx = ["--context", a.context] if a.context else []
-    sh("kubectl", *ctx, "apply", "-k", "kubernetes/")
 
-    patch = {
-        "metadata": {"labels": {"app.kubernetes.io/version": f"model-v{mv.version}"}},
-        "spec": {
-            "template": {
-                "metadata": {
-                    "annotations": {
-                        "mlops.agent/model-name": a.model_name,
-                        "mlops.agent/model-version": str(mv.version),
-                        "mlops.agent/model-run-id": mv.run_id,
-                        "mlops.agent/dataset-version": meta["dataset_version"] or "",
-                    }
-                },
-                "spec": {"containers": [{"name": DEPLOYMENT, "image": image}]},
-            }
-        },
-    }
-    sh(
-        "kubectl",
-        *ctx,
-        "-n",
-        NAMESPACE,
-        "patch",
-        "configmap",
-        "inference-config",
-        "--type",
-        "merge",
-        "-p",
-        json.dumps({"data": {"MODEL_VERSION": str(mv.version)}}),
-    )
-    sh(
-        "kubectl",
-        *ctx,
-        "-n",
-        NAMESPACE,
-        "patch",
-        "deployment",
-        DEPLOYMENT,
-        "--type",
-        "strategic",
-        "-p",
-        json.dumps(patch),
+    # Render the manifests with the release's image, version label, provenance annotations and ConfigMap
+    # MODEL_VERSION filled in, then apply once - so the cluster never sees a placeholder image.
+    import yaml
+
+    rendered = subprocess.run(
+        ["kubectl", "kustomize", "kubernetes/"], cwd=ROOT, check=True, capture_output=True, text=True
+    ).stdout
+    docs = [d for d in yaml.safe_load_all(rendered) if d]
+    for d in docs:
+        if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "inference-config":
+            d["data"]["MODEL_VERSION"] = str(mv.version)
+        if d["kind"] == "Deployment" and d["metadata"]["name"] == DEPLOYMENT:
+            d["metadata"]["labels"]["app.kubernetes.io/version"] = f"model-v{mv.version}"
+            d["spec"]["template"]["metadata"]["annotations"].update(
+                {
+                    "mlops.agent/model-name": a.model_name,
+                    "mlops.agent/model-version": str(mv.version),
+                    "mlops.agent/model-run-id": mv.run_id,
+                    "mlops.agent/dataset-version": meta["dataset_version"] or "",
+                }
+            )
+            d["spec"]["template"]["spec"]["containers"][0]["image"] = image
+    print("$ kubectl apply -f - (rendered manifests for", image, ")")
+    subprocess.run(
+        ["kubectl", *ctx, "apply", "-f", "-"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        input=yaml.safe_dump_all(docs, sort_keys=False),
     )
     sh("kubectl", *ctx, "-n", NAMESPACE, "rollout", "status", f"deployment/{DEPLOYMENT}", "--timeout=180s")
     print(
