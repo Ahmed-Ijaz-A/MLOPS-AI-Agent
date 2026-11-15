@@ -91,6 +91,7 @@ SCENARIOS: dict[str, dict] = {
         "steps": [
             {"say": "Scale the inference-api deployment in the kube-system namespace to 10 replicas."},
             {"say": "Restart the coredns deployment."},
+            {"say": "Scale the inference-api deployment in the mlops-agent namespace to 10 replicas."},
         ],
     },
 }

@@ -1,6 +1,6 @@
 # Failure investigation: ImagePullBackOff after a bad release
 
-_Recorded 2026-11-15 11:56 UTC against the live stack (scenario `image-failure`)._
+_Recorded 2026-11-15 12:44 UTC against the live stack (scenario `image-failure`)._
 
 > **Operator ran:** `python.exe scripts/inject_failure.py bad-image`
 
@@ -8,101 +8,88 @@ _Recorded 2026-11-15 11:56 UTC against the live stack (scenario `image-failure`)
 
 The last release seems broken. Diagnose the inference-api deployment and propose a fix.
 
-### Tool calls (llm mode, 37.4s)
+### Tool calls (llm mode, 8.9s)
 
 | id | tool | status | ms | evidence |
 |---|---|---|---|---|
-| E1 | `k8s_diagnose_deployment` | ok | 10452 | inference-api is DEGRADED: 2/2 replicas ready, 2 ready endpoint(s); [critical] Image cannot be pulled; [high] Pod cannot be scheduled. |
-| E2 | `mlflow_get_model_registry` | timeout | 20015 | mlflow_get_model_registry did not respond within 20s. |
-| E3 | `mlflow_get_model_registry` | ok | 1013 | Model 'credit-risk-classifier': 5 version(s); candidate=v5, champion=v2. |
-| E4 | `k8s_get_deployed_version` | ok | 105 | inference-api runs mlops-inference:model-v404-does-not-exist = model credit-risk-classifier v2 (run 2510235a, dataset v2.0), revision 7, ready 2/2. Consistency issues: ["image tag 'model-v404-does-not-exist' does not encode model version 2"] |
+| E1 | `k8s_diagnose_deployment` | ok | 6084 | inference-api is DEGRADED: 2/2 replicas ready, 2 ready endpoint(s); [critical] Image cannot be pulled. |
+| E2 | `k8s_rollback_deployment` | requires_confirmation | 6 | NOT EXECUTED. 'Roll back mlops-agent/inference-api to the previous revision' requires explicit human approval (confirmation id cfm__ebaI4BxPABd, expires 12:53:16 UTC). |
 
 ### Agent
 
 **Summary**  
-The inference‑api deployment is degraded because a newly created pod tries to pull a non‑existent image tag (`mlops-inference:model‑v404‑does‑not‑exist`), causing an `ImagePullBackOff`. The deployment’s image tag does not match the champion model version (model‑v2) registered in MLflow, creating a consistency issue.
+The inference‑api deployment is degraded because a new replica is stuck in **ImagePullBackOff** for the non‑existent image `mlops-inference:model-v404-does-not-exist`[E1].
 
 **Verified facts**  
-- Deployment state: DEGRADED, 2/2 replicas ready, 1 pod pending with `ImagePullBackOff` [ E1 ].  
-- The failing pod (`inference-api-8697655964-2jgkz`) is using image `mlops-inference:model‑v404‑does‑not‑exist` [ E1 ].  
-- MLflow model registry shows the current champion is version 2 of *credit‑risk‑classifier* (run `2510235a…`, dataset v2.0) [ E3 ].  
-- Deployed version metadata reveals the deployment is configured with image tag `model‑v404‑does‑not‑exist` while the app version label is `model‑v2`; the image tag does **not** encode the champion model version 2 [ E4 ].  
-- The deployment’s ConfigMap also reports `MODEL_VERSION=2`, confirming the intended model version 2 [ E4 ].
+- Deployment `inference-api` reports **DEGRADED** status, with 2/2 replicas ready but one new replica pending due to image pull failure[E1].  
+- The pending pod `inference-api-5c87784b78-76b4p` shows `ImagePullBackOff` and the associated events confirm the image cannot be pulled (repository does not exist)[E1].  
+- The other two pods run the previous image `mlops-inference:model-v2` successfully[E1].  
+- A rollback action to the previous revision has been prepared but awaits human approval, with confirmation id `cfm__ebaI4BxPABd`[E2].
 
 **Uncertainties**  
-- No evidence was obtained for the exact state of the previous successful revision (revision 6) – the rollback would rely on Kubernetes’ stored rollout history.
+- No evidence about the intended new image tag (why `model-v404-does-not-exist` was specified) – the source of the erroneous tag is unknown.  
+- No current info on the model version registered as *champion* in MLflow; confirming it matches the running image would require an additional query (if needed).
 
 **Recommended actions**  
-1. **Rollback to the last good revision** – create a pending rollback action to revert the `inference-api` deployment to its previous revision, which used the correct image tag.  
-   ```json
-   {"namespace":"mlops-agent","deployment":"inference-api","to_revision":"6"}
-   ```  
-   *(Pending approval; confirmation ID will be provided by the system.)*  
+1. **Approve the pending rollback** to restore the previous working revision of the deployment.  
+   - Confirmation ID: `cfm__ebaI4BxPABd` (expires 12:53 UTC).  
+2. After rollback succeeds, **verify the model version** in the MLflow Model Registry matches the image tag `model-v2` (run `mlflow_get_model_registry` if you need confirmation).  
+3. Investigate the source of the bad image tag (`model-v404-does-not-exist`) – likely a mis‑configuration in the deployment manifest or CI/CD pipeline. Correct the tag to a valid image (e.g., `mlops-inference:model-v2` or the intended new version) and, once verified, you can redeploy with a new approved rollout.
 
-2. **Redeploy the champion model correctly** – after the rollback (or directly), run the human‑approved deployment script to ensure the image tag aligns with the champion version:  
-   ```bash
-   python scripts/deploy_model.py --version 2
-   ```  
-   This will build/push the correct Docker image (`mlops-inference:model-v2`) and update the deployment to use it.  
-
-3. **Verify post‑deployment health** – once the rollout completes, run `k8s_diagnose_deployment` again to confirm the deployment is `HEALTHY` and that no `ImagePullBackOff` or readiness‑probe errors remain.  
-
-These steps address the critical image‑pull failure and restore consistency between the deployment and the MLflow champion model.
-
-_Grounding: verified (1 values checked) · systems: kubernetes, mlflow · request `req_5f3750d613bd`_
+_Grounding: verified (1 values checked) · systems: kubernetes · request `req_18de6ffd9054`_
 
 ## User
 
 Roll the inference-api deployment back to the previous revision.
 
-### Tool calls (llm mode, 1.2s)
+### Tool calls (llm mode, 1.1s)
 
 | id | tool | status | ms | evidence |
 |---|---|---|---|---|
-| E1 | `k8s_rollback_deployment` | requires_confirmation | 9 | NOT EXECUTED. 'Roll back mlops-agent/inference-api to the previous revision' requires explicit human approval (confirmation id cfm_GFjiDuUS87hL, expires 12:05:56 UTC). |
+| E1 | `k8s_rollback_deployment` | requires_confirmation | 4 | NOT EXECUTED. 'Roll back mlops-agent/inference-api to the previous revision' requires explicit human approval (confirmation id cfm_8wpTH8WV7vAn, expires 12:53:17 UTC). |
 
 ### Agent
 
 **Summary**  
-A rollback of the `inference-api` deployment to its previous revision has been prepared and now awaits human approval.
+A rollback of the `inference-api` deployment to its previous revision has been prepared and now awaits your approval.
 
 **Verified facts**  
-- The rollback request was created successfully and returned a confirmation ID `cfm_GFjiDuUS87hL` [ E1 ].  
-- The rollback targets the `mlops-agent` namespace and the `inference-api` deployment, with no explicit revision supplied (so it will revert to the most recent prior revision).  
+- The rollback request was created successfully and is pending human confirmation, with confirmation ID **`cfm_8wpTH8WV7vAn`** and expiration at **2026‑11‑15 12:53:17 UTC**[E1].
 
 **Uncertainties**  
-- The exact revision number that will be restored is not known until the rollback is approved and executed.  
+- None; the rollback action is ready but not yet executed.
 
 **Recommended actions**  
-- **Approve the pending rollback** using the provided confirmation ID (`cfm_GFjiDuUS87hL`). Once approved, the deployment will revert to the prior revision, restoring the previous working image tag.  
-- After the rollback completes, run `k8s_diagnose_deployment` again to confirm the deployment is healthy and serving the correct champion model version.
+- **Approve the rollback** by confirming the pending action using the provided confirmation ID `cfm_8wpTH8WV7vAn` before it expires. This will restore the previous, known‑good revision of the `inference-api` deployment.
 
-_Grounding: verified (0 values checked) · systems: kubernetes · request `req_20a78381cf80`_
+_Grounding: verified (0 values checked) · systems: kubernetes · request `req_9c2b61b193c7`_
 
-> **Operator APPROVED** `cfm_GFjiDuUS87hL` - k8s_rollback_deployment {"namespace": "mlops-agent", "deployment": "inference-api", "to_revision": null} -> **ok**: Rolled back mlops-agent/inference-api from revision 7 to the template of revision 6 (image mlops-inference:model-v2).
+> **Operator APPROVED** `cfm_8wpTH8WV7vAn` - k8s_rollback_deployment {"namespace": "mlops-agent", "deployment": "inference-api", "to_revision": null} -> **ok**: Rolled back mlops-agent/inference-api from revision 14 to the template of revision 13 (image mlops-inference:model-v2).
 
 ## User
 
 Is the inference API healthy now, and which model version is it serving?
 
-### Tool calls (llm mode, 56.3s)
+### Tool calls (llm mode, 63.5s)
 
 | id | tool | status | ms | evidence |
 |---|---|---|---|---|
-| E1 | `k8s_diagnose_deployment` | ok | 134 | inference-api is HEALTHY: 2/2 replicas ready, 2 ready endpoint(s); no problems found. |
+| E1 | `k8s_get_deployed_version` | ok | 11055 | inference-api runs mlops-inference:model-v2 = model credit-risk-classifier v2 (run 2510235a, dataset v2.0), revision 15, ready 2/2. Version metadata consistent. |
 
 ### Agent
 
 **Summary**  
-The `inference-api` deployment is now healthy and serving model version **v2**.
+Yes – the `inference-api` deployment is healthy (2 / 2 pods ready) and is serving model version **2** (`mlops-inference:model‑v2`).
 
 **Verified facts**  
-- Deployment status: **HEALTHY** – 2/2 replicas ready, both endpoints ready, no problems detected [ E1 ].  
-- Image used by both pods: `mlops-inference:model‑v2` [ E1 ].  
-- Deployment metadata shows `version_label: "model‑v2"` and the associated ConfigMap reports `MODEL_VERSION=2` [ E1 ].  
-- The rollout revision is now `8` (the rollback applied revision 6’s template) [ E1 ].
+- Deployment `inference-api` reports **ready 2/2** pods, image `mlops-inference:model-v2`, rollout revision 15, and no consistency issues[E1].  
+- The image tag `model‑v2` corresponds to the registered model **credit‑risk‑classifier** version 2, which was produced by MLflow run `2510235a1b05490bab5f71a3770ea793` on dataset version v2.0[E1].  
 
 **Uncertainties**  
-- None; all relevant health and version information was obtained from the diagnosis.
+- None; all queried indicators are consistent.
 
-_Grounding: verified (0 values checked) · systems: kubernetes · request `req_0a133a58a2a7`_
+**Recommended actions**  
+- Continue monitoring the API (e.g., request health checks, track production metrics).  
+- If a new model version is ready, follow the usual promotion workflow (quality‑gate → candidate alias → human‑approved deployment).
+
+_Grounding: verified (1 values checked) · systems: kubernetes · request `req_24c2ecb79596`_
